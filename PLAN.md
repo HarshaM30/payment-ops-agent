@@ -18,7 +18,7 @@ payment-ops-agent/
 │   │   ├── session.py          # engine, SessionLocal, get_session dependency
 │   │   └── models/             # one module per table group
 │   │       ├── customers.py    # Customer
-│   │       ├── billing.py      # Invoice, Payment, PaymentHistory
+│   │       ├── billing.py      # Invoice, Payment, PaymentHistory, PaymentPlan
 │   │       ├── agent.py        # AgentRun, Action, Approval
 │   │       └── audit.py        # Outbox, AuditLog
 │   ├── schemas/
@@ -26,8 +26,12 @@ payment-ops-agent/
 │   │   └── llm.py              # strict Pydantic schemas for every LLM output
 │   ├── api/
 │   │   ├── deps.py
+│   │   ├── security.py         # X-API-Key check (constant-time), UI session + CSRF
 │   │   ├── errors.py           # uniform error response shape
-│   │   └── routes/             # health.py, runs.py, approvals.py, audit.py
+│   │   └── routes/             # health.py, runs.py, approvals.py, audit.py, ui.py
+│   ├── web/                    # server-rendered approvals page (Milestone 6)
+│   │   ├── templates/          # Jinja2: base.html, login.html, approvals.html
+│   │   └── static/             # one small CSS file, no JS framework
 │   ├── services/               # business logic, called by API and agents
 │   │   ├── runs.py
 │   │   ├── approvals.py        # approve/reject -> execute action -> outbox
@@ -41,6 +45,7 @@ payment-ops-agent/
 │   │   └── actions.py          # draft_message, schedule_followup, flag_for_review
 │   ├── llm/
 │   │   ├── client.py           # LiteLLM wrapper: structured output, usage capture
+│   │   ├── models.py           # provider -> default model names (picked in M3)
 │   │   ├── throttle.py         # token-bucket limiter (requests/min, tokens/min)
 │   │   ├── retry.py            # exponential backoff + jitter, 429/5xx/timeout handling
 │   │   └── fake.py             # deterministic fake LLM for tests, CI, load tests
@@ -59,7 +64,7 @@ payment-ops-agent/
 │   ├── datasets/v1/scenarios.jsonl   # 40 scenarios + expected outcomes
 │   ├── datasets/v1/README.md         # schema and changelog for the dataset
 │   ├── runner.py               # `make eval`
-│   ├── metrics.py              # accuracy, success rate, tool-call accuracy, p95, tokens
+│   ├── metrics.py              # accuracy, success rate, tool-call accuracy, p95, tokens, mean ± std
 │   ├── report.py               # markdown report writer
 │   └── reports/                # YYYY-MM-DDTHH-MM-SS_<model>_<dataset>.md
 ├── benchmarks/
@@ -92,6 +97,7 @@ payment-ops-agent/
 - [x] Private GitHub repo `payment-ops-agent` set as `origin`
 - [x] `.env.example` with placeholders for every env var
 - [x] `PLAN.md`
+- [x] Open questions answered and recorded in section 3
 
 ---
 
@@ -99,9 +105,9 @@ payment-ops-agent/
 
 **Tasks**
 1. `pyproject.toml` with Python 3.12, uv lockfile, runtime and dev dependency groups; ruff config.
-2. `config.py` using pydantic-settings; fail fast on missing or invalid values.
+2. `config.py` using pydantic-settings; fail fast on missing or invalid values (including a missing or too-short `API_KEY` / `SESSION_SECRET` outside `APP_ENV=test`).
 3. `docker-compose.yml` with a `db` service (`postgres:16`, healthcheck, named volume). The API service is added in M5.
-4. SQLAlchemy 2 models (typed `Mapped[...]`) for all 9 tables, with:
+4. SQLAlchemy 2 models (typed `Mapped[...]`) for all 10 tables (the 9 in the spec plus `payment_plans`), with:
    - Enums: invoice status `open/paid/overdue/disputed`; action status `proposed/approved/rejected/executed`; run status `queued/running/awaiting_approval/completed/failed`.
    - `Numeric(12,2)` for money (never float), `timestamptz` everywhere.
    - FKs, indexes on `invoices(status, due_date)`, `audit_log(run_id, created_at)`.
@@ -140,13 +146,20 @@ payment-ops-agent/
    - `GET /approvals?status=pending`, `POST /approvals/{id}/approve`, `POST /approvals/{id}/reject` (reject requires a reason; approver name required on both)
    - `GET /audit?run_id=&event_type=&limit=&cursor=`: paginated
 4. Pagination (limit capped at 200), UUID path validation, 404/409/422 handling.
-5. Unit tests for every tool and endpoint.
+5. API key auth in `api/security.py`:
+   - A FastAPI dependency checks the `X-API-Key` header against `API_KEY` using `secrets.compare_digest`
+   - Applied to every router except `GET /health` (which stays open for Docker/load-balancer health checks)
+   - Missing or wrong key → `401` with the uniform error shape; the key is never logged or written to `audit_log`
+   - Declared as an OpenAPI security scheme so the "Authorize" button works in `/docs`
+6. Unit tests for every tool and endpoint.
 
 **Done when**
 - [ ] Each tool has tests for the happy path, not-found, and invalid input
 - [ ] Every tool call produces exactly one `audit_log` row (tested)
 - [ ] Invalid input on every endpoint returns 422 with the uniform error shape (tested)
 - [ ] Approving an already-decided approval returns 409
+- [ ] Every protected endpoint returns 401 with no key and with a wrong key; `/health` returns 200 with no key (tested with a parametrized test over all routes, so new routes can't skip auth)
+- [ ] A test confirms the API key never appears in logs or `audit_log`
 - [ ] OpenAPI docs at `/docs` show request/response examples
 - [ ] Coverage of at least 85% on `tools/`, `services/`, `api/`
 
@@ -156,6 +169,7 @@ payment-ops-agent/
 
 **Tasks**
 1. `llm/` layer:
+   - First, check the current free-tier model names and limits for Groq, Gemini, and Ollama, then record the defaults in `llm/models.py`, `.env.example`, and the README
    - LiteLLM wrapper picking the provider/model from `LLM_PROVIDER` + `LLM_MODEL`
    - Client-side throttle (requests/min and tokens/min token buckets)
    - Retry with exponential backoff + jitter on 429, 5xx, and timeouts; respect `Retry-After` when present; hard timeout per call
@@ -195,20 +209,22 @@ payment-ops-agent/
 1. Dataset `evals/datasets/v1/scenarios.jsonl`, 40 scenarios (about 6–7 per scenario type, plus edge cases). Each has:
    `id, description, fixture (customer + invoices + payments), expected_action, acceptable_actions, requires_approval, expected_tools, forbidden_policies`.
 2. The runner loads each scenario into an isolated eval schema/database, runs the graph, and collects results. It is sequential by default to respect free-tier limits and can resume after interruption.
+3. Repeats: `--repeats N` (or `EVAL_REPEATS`, default 1) runs each scenario N times. With N > 1, every metric is reported as mean ± std across repeats, and each scenario gets a consistency score (share of repeats that chose the same action). Before starting, the runner prints the estimated number of LLM calls so you can see the free-tier cost.
 3. Metrics:
    - **Decision accuracy**: chosen action == expected_action
    - **Task success rate**: correct action AND correct approval flag AND zero policy violations AND valid schema
    - **Tool-call accuracy**: precision and recall of tools called vs `expected_tools`
    - **Policy violation count**: violations that reached the outbox (should be 0), reported separately from violations the guardrail caught
    - **p95 latency** per run, **average tokens** per run
-4. Markdown report: config (provider, model, prompt versions, dataset version, git SHA), metrics table, per-scenario-type breakdown, list of failures with reasons.
-5. `make eval` and `make eval-compare A=... B=...` (diff two reports).
+5. Markdown report (the only output; no MLflow): config (provider, model, prompt versions, dataset version, repeats, git SHA), metrics table, per-scenario-type breakdown, list of failures with reasons.
+6. `make eval` (accepts `REPEATS=N`) and `make eval-compare A=... B=...` (diff two reports).
 
 **Done when**
 - [ ] The dataset has 40 scenarios that pass schema validation, and the dataset README documents fields
 - [ ] `make eval LLM_PROVIDER=fake` runs in CI-like conditions with no API key
 - [ ] The first real eval report on Groq is committed to `evals/reports/`
-- [ ] Metric functions have unit tests with hand-computed expected values
+- [ ] Metric functions have unit tests with hand-computed expected values, including mean ± std
+- [ ] `make eval REPEATS=3 LLM_PROVIDER=fake` produces a report with mean ± std columns; `REPEATS=1` shows plain values
 - [ ] Policy violations reaching the outbox = 0 in the committed report
 
 ---
@@ -229,14 +245,24 @@ payment-ops-agent/
 
 ---
 
-### Milestone 6: Documentation
+### Milestone 6: Approvals page and documentation
 
 **Tasks**
-1. README: pitch, Mermaid architecture diagram + graph diagram, one-command quickstart, env var table, results summary (linking reports), demo GIF, "Deploying to the cloud" **guide** (Cloud Run or ECS Fargate + Cloud SQL/RDS, secrets in Secret Manager, migrations as a job), clearly marked as not deployed.
-2. Record the demo GIF (start run → trace → approval → outbox).
-3. Interview notes (kept local, not committed): architecture walkthrough, design decisions and tradeoffs, and 15 interview Q&As (e.g. why deterministic guardrails, how retries work, how evals are scored, what fails, what would change at scale).
+1. Minimal approvals page, server-rendered with Jinja2 (no React, no JS framework):
+   - `GET /ui/login`: a form where you enter the API key once. On success the server sets a signed, `HttpOnly`, `SameSite=Strict` session cookie (signed with `SESSION_SECRET`). The key itself is never stored in the cookie.
+   - `GET /ui/approvals`: pending approvals table showing customer, invoice, amount, proposed action, drafted message, and the policy rules that triggered approval
+   - Approve/reject buttons are plain HTML forms that POST to `/ui/approvals/{id}/approve|reject` with a CSRF token. They call the same `services/approvals.py` code as the JSON API, so the logic isn't duplicated.
+   - `GET /ui/outbox`: read-only list of simulated sent messages, so the demo shows the end result
+   - Message text is auto-escaped by Jinja2 (LLM output is never rendered as HTML)
+2. README: pitch, Mermaid architecture diagram + graph diagram, one-command quickstart, env var table, results summary (linking reports), demo GIF, "Deploying to the cloud" **guide** (Cloud Run or ECS Fargate + Cloud SQL/RDS, secrets in Secret Manager, migrations as a job), clearly marked as not deployed.
+3. Record the demo GIF using the approvals page (start run → trace → approve on the page → outbox page).
+4. Interview notes (kept local, not committed): architecture walkthrough, design decisions and tradeoffs, and 15 interview Q&As (e.g. why deterministic guardrails, how retries work, how evals are scored, what fails, what would change at scale).
 
 **Done when**
+- [ ] `/ui/approvals` redirects to `/ui/login` with no session cookie (tested)
+- [ ] A form POST without a valid CSRF token returns 403 (tested)
+- [ ] Approving on the page creates an outbox row, the same as the JSON API (tested)
+- [ ] A drafted message containing `<script>` renders as text, not HTML (tested)
 - [ ] A fresh clone + `cp .env.example .env` + `make demo` (or `docker compose up`) works by following only the README
 - [ ] Mermaid diagrams render on GitHub
 - [ ] The README states plainly that the cloud section is a guide and the project is not deployed
@@ -244,24 +270,33 @@ payment-ops-agent/
 
 ---
 
-## 3. Questions and suggested changes
+## 3. Decisions
 
-**Suggested changes (I'll assume these unless you say otherwise)**
+Agreed on 2026-11-15. These override anything in the original spec they conflict with.
 
-1. **Fake LLM provider.** Add `LLM_PROVIDER=fake` as a fourth option. It lets CI, integration tests, and Locust run with no key and no rate limits. Otherwise the load test measures Groq's free tier, not your API.
-2. **`POST /runs` is asynchronous (202 Accepted).** A run makes several LLM calls and can take 10–60 s on a free tier. Clients poll `GET /runs/{id}`.
-3. **Approvals don't resume the LLM graph.** The run ends at `awaiting_approval`; approving runs the already-drafted action deterministically. This is simpler than LangGraph interrupts + a Postgres checkpointer, and it means a human approves exactly the text that gets sent. (We could switch to LangGraph `interrupt()` if you want to show that feature.)
-4. **Add a `payment_plans` table** (or a plan record in `payment_history`). The "recent payment plan" scenario needs somewhere to live. I'd also define `payment_history` as a per-customer event log (payment received, promise to pay, plan created, dispute opened) so it is distinct from `payments`.
-5. **Integration tests run in CI** too, using a GitHub Actions Postgres service container. It's free and makes the CI badge more meaningful.
-6. **uv** for dependency management (fast, lockfile, good CI caching).
-7. **Sync SQLAlchemy + psycopg 3.** Simpler to test and reason about. The slow part is the LLM, which already runs in the background. Async can be noted in the interview notes as a tradeoff.
-8. **Discount detection is rule-based** (regex + keyword list), consistent with "the policy node is deterministic". Its limits (paraphrasing) will be documented, and eval scenarios will try to get around it.
-9. **Prompt versioning.** Prompts live in files and their version is stored on each run and in each eval report, so before/after comparisons are traceable.
+**Architecture**
 
-**Questions for you**
+1. **Fake LLM provider.** `LLM_PROVIDER=fake` is a fourth option alongside groq, gemini, and ollama. CI, unit/integration tests, and Locust use it, so none of them need an API key or hit rate limits.
+2. **`POST /runs` is asynchronous.** It returns `202 Accepted` with a run ID; clients poll `GET /runs/{id}`.
+3. **Approvals don't restart the agents.** A run that needs approval ends as `awaiting_approval`. Approving sends the already-drafted message exactly as written, with no further LLM call.
+4. **`payment_plans` table.** Added to the data model. `payment_history` is a per-customer event log (payment received, promise to pay, plan created, dispute opened), separate from `payments`.
+5. **Sync SQLAlchemy + psycopg 3**, not async. The tradeoff is written up in the interview notes.
+6. **Discount detection is rule-based** (regex + keyword list), keeping the policy node fully deterministic. Its limits are documented, and some eval scenarios try to get around it.
+7. **Prompt versioning.** Prompts live in versioned files; the version is stored on each run and printed in each eval report.
 
-1. **MLflow?** You asked for `mlruns` in `.gitignore`, but the spec doesn't mention MLflow. Should eval runs also be logged to a local MLflow tracker, or is the markdown report enough? (I'd lean toward markdown only, plus optional MLflow later.)
-2. **Auth.** The spec has no auth. Should I add a simple static API key header (`X-API-Key`) so approvals aren't open, or keep it auth-free and say so in the README?
-3. **Demo UI.** The demo GIF can use Swagger UI + terminal. Do you want a minimal approvals page (one HTML file served by FastAPI) to make the GIF more visual? It's about half a day of work.
-4. **Eval determinism.** LLM outputs vary between runs. Should the eval runner support `--repeats N` and report mean ± std? This costs N× more free-tier quota.
-5. **Model names.** Groq and Gemini retire models often. I'll check the current free-tier model names when M3 starts, rather than locking them in now. Is that OK?
+**Tooling**
+
+8. **uv** for dependency management.
+9. **Integration tests run in CI** against a GitHub Actions Postgres service container.
+10. **No MLflow.** Eval results are markdown reports only. (`mlruns/` stays in `.gitignore` as a harmless safeguard.)
+
+**Answers to open questions**
+
+11. **API key auth (Milestone 2).** Every endpoint except `GET /health` requires an `X-API-Key` header matching `API_KEY`. The key is compared in constant time and is never logged.
+12. **Approvals page (Milestone 6).** Minimal server-rendered HTML with Jinja2; no React or JS framework. It logs in with the API key once and uses a signed session cookie (`SESSION_SECRET`) with CSRF tokens on form posts.
+13. **Eval repeats (Milestone 4).** `--repeats N` / `EVAL_REPEATS`, default 1. With N > 1, metrics are reported as mean ± std, plus a per-scenario consistency score.
+14. **Model names.** Current free-tier model names for Groq, Gemini, and Ollama are checked and picked at the start of Milestone 3. The model in `.env.example` is a placeholder until then.
+
+**Environment variables added**
+
+- `API_KEY`, `SESSION_SECRET`, `EVAL_REPEATS` (all in `.env.example` with placeholder values)
