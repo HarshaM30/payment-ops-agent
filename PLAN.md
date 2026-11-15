@@ -120,12 +120,12 @@ payment-ops-agent/
 9. GitHub Actions `ci.yml`: install with uv, `ruff check`, `ruff format --check`, unit tests; integration tests using a `postgres:16` service container.
 
 **Done when**
-- [ ] `make up && make migrate && make seed` works on a clean clone
-- [ ] `alembic downgrade base && alembic upgrade head` works with no errors
-- [ ] Seed creates at least 5 customers of every scenario type; running it twice gives the same data
-- [ ] `GET /health` returns `200 {"status":"ok","db":"ok"}`, and `503` when the DB is down
-- [ ] A test asserts every scenario type exists after seeding
-- [ ] CI is green on GitHub with no secrets configured
+- [x] `make up && make migrate && make seed` works on a clean clone
+- [x] `alembic downgrade base && alembic upgrade head` works with no errors
+- [x] Seed creates at least 5 customers of every scenario type; running it twice gives the same data
+- [x] `GET /health` returns `200 {"status":"ok","db":"ok"}`, and `503` when the DB is down
+- [x] A test asserts every scenario type exists after seeding
+- [x] CI is green on GitHub with no secrets configured
 
 ---
 
