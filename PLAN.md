@@ -154,14 +154,14 @@ payment-ops-agent/
 6. Unit tests for every tool and endpoint.
 
 **Done when**
-- [ ] Each tool has tests for the happy path, not-found, and invalid input
-- [ ] Every tool call produces exactly one `audit_log` row (tested)
-- [ ] Invalid input on every endpoint returns 422 with the uniform error shape (tested)
-- [ ] Approving an already-decided approval returns 409
-- [ ] Every protected endpoint returns 401 with no key and with a wrong key; `/health` returns 200 with no key (tested with a parametrized test over all routes, so new routes can't skip auth)
-- [ ] A test confirms the API key never appears in logs or `audit_log`
-- [ ] OpenAPI docs at `/docs` show request/response examples
-- [ ] Coverage of at least 85% on `tools/`, `services/`, `api/`
+- [x] Each tool has tests for the happy path, not-found, and invalid input
+- [x] Every tool call produces exactly one `audit_log` row (tested)
+- [x] Invalid input on every endpoint returns 422 with the uniform error shape (tested)
+- [x] Approving an already-decided approval returns 409
+- [x] Every protected endpoint returns 401 with no key and with a wrong key; `/health` returns 200 with no key (tested with a parametrized test over all routes, so new routes can't skip auth)
+- [x] A test confirms the API key never appears in logs or `audit_log`
+- [x] OpenAPI docs at `/docs` show request/response examples
+- [x] Coverage of at least 85% on `tools/`, `services/`, `api/`
 
 ---
 

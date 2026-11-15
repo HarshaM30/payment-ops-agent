@@ -24,6 +24,28 @@ make run                  # http://localhost:8000/docs
 
 `GET /health` is open; every other endpoint needs an `X-API-Key` header matching `API_KEY`.
 
+## API
+
+| Method | Path | Notes |
+|---|---|---|
+| `GET` | `/health` | Open. `200` with DB status, `503` if the DB is unreachable |
+| `POST` | `/runs` | `{"invoice_ids": [...]}` or `{"scope": "all_overdue"}`, optional `max_invoices`. Returns `202` + run id |
+| `GET` | `/runs/{id}` | Status, token/latency totals, and the ordered trace from `audit_log` |
+| `GET` | `/approvals?status=pending` | Paginated (`limit` ≤ 200, `cursor`) |
+| `POST` | `/approvals/{id}/approve` | `{"approver": "..."}`. Sends the drafted message as written (an outbox row); `409` if already decided |
+| `POST` | `/approvals/{id}/reject` | `{"approver": "...", "reason": "..."}` |
+| `GET` | `/audit?run_id=&event_type=&limit=&cursor=` | Paginated audit log, newest first |
+
+Errors always look like `{"error": {"code": "...", "message": "...", "details": [...]}}`.
+Interactive docs with examples are at `/docs` (use **Authorize** to set the key).
+
+## Agent tools
+
+Plain typed functions in `src/payops/tools/`, each exported with a JSON schema for the LLM
+and wrapped by `@audited`, so every call writes exactly one `audit_log` row:
+`get_customer`, `get_invoices`, `get_payment_history`, `draft_message`, `schedule_followup`,
+`flag_for_review`. The write tools only create *proposed* actions; nothing is sent from a tool.
+
 ## Development
 
 ```bash

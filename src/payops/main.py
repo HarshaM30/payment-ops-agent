@@ -7,11 +7,13 @@ import logging
 import time
 from collections.abc import Awaitable, Callable
 
-from fastapi import FastAPI, Request, Response
+from fastapi import APIRouter, Depends, FastAPI, Request, Response
 
 from payops import __version__
+from payops.api.deps import PROTECTED_RESPONSES
 from payops.api.errors import install_error_handlers
-from payops.api.routes import health
+from payops.api.routes import approvals, audit, health, runs
+from payops.api.security import require_api_key
 from payops.config import get_settings
 from payops.logging import configure_logging
 
@@ -50,5 +52,11 @@ def create_app() -> FastAPI:
         )
         return response
 
-    app.include_router(health.router)
+    app.include_router(health.router)  # open: used by Docker / load-balancer health checks
+
+    protected = APIRouter(dependencies=[Depends(require_api_key)], responses=PROTECTED_RESPONSES)
+    protected.include_router(runs.router)
+    protected.include_router(approvals.router)
+    protected.include_router(audit.router)
+    app.include_router(protected)
     return app

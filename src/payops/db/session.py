@@ -32,7 +32,11 @@ def get_sessionmaker() -> sessionmaker[Session]:
 def get_session() -> Iterator[Session]:
     """FastAPI dependency. Creating a Session does not open a connection until first use."""
     with get_sessionmaker()() as session:
-        yield session
+        try:
+            yield session
+        except Exception:
+            session.rollback()
+            raise
 
 
 def check_db(engine: Engine | None = None) -> None:

@@ -14,6 +14,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from payops.errors import AppError
+
 logger = logging.getLogger(__name__)
 
 _HTTP_CODES = {
@@ -26,33 +28,6 @@ _HTTP_CODES = {
     422: "validation_error",
     503: "service_unavailable",
 }
-
-
-class AppError(Exception):
-    """Base for errors that map to an HTTP response. Raised by services and tools."""
-
-    status_code = 400
-    code = "bad_request"
-
-    def __init__(self, message: str, details: list[dict[str, Any]] | None = None) -> None:
-        super().__init__(message)
-        self.message = message
-        self.details = details or []
-
-
-class NotFoundError(AppError):
-    status_code = 404
-    code = "not_found"
-
-
-class ConflictError(AppError):
-    status_code = 409
-    code = "conflict"
-
-
-class InvalidInputError(AppError):
-    status_code = 422
-    code = "validation_error"
 
 
 def error_body(code: str, message: str, details: list[Any] | None = None) -> dict[str, Any]:
