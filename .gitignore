@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Testing / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# Tooling caches
+.ruff_cache/
+.mypy_cache/
+
+# Databases
+*.db
+*.sqlite3
+
+# ML / experiment tracking
+mlruns/
+
+# Load test artifacts
+benchmarks/locust_*.csv
+benchmarks/*.html
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
