@@ -28,7 +28,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import Engine, create_engine, make_url
+from sqlalchemy import Connection, Engine, create_engine, make_url, text
 from sqlalchemy.orm import Session
 
 from evals import fixtures
@@ -46,6 +46,10 @@ from payops.services.runs import create_run
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_STATE_DIR = ROOT / "evals" / "runs"
 EXIT_RATE_LIMITED = 75  # EX_TEMPFAIL: try again later
+EXIT_BUSY = 2
+# Postgres advisory lock id held for a whole runner session: two runners on the same
+# eval database would wipe each other's scenarios mid-run.
+EVAL_LOCK_ID = 0x7061796F7073  # "payops"
 # Used until this eval has finished scenarios to measure. Measured on the manual Groq run
 # in Milestone 3: ~6.6K tokens and ~5 LLM calls per invoice.
 DEFAULT_TOKENS_PER_RUN = 7_000
@@ -169,6 +173,25 @@ def estimate(
     else:
         lines.append(f"No known daily quota for {provider}/{model}.")
     return lines, per_run
+
+
+def try_lock(engine: Engine) -> Connection | None:
+    """Hold the eval lock on a dedicated connection; None if another runner has it."""
+    conn = engine.connect()
+    if conn.execute(text("SELECT pg_try_advisory_lock(:id)"), {"id": EVAL_LOCK_ID}).scalar():
+        conn.commit()
+        return conn
+    conn.close()
+    return None
+
+
+def release_lock(conn: Connection) -> None:
+    # Explicit unlock: closing only returns a pooled connection, still holding the lock.
+    try:
+        conn.execute(text("SELECT pg_advisory_unlock(:id)"), {"id": EVAL_LOCK_ID})
+        conn.commit()
+    finally:
+        conn.close()
 
 
 # ------------------------------------------------------------------------- one scenario
@@ -314,6 +337,14 @@ def main(argv: list[str] | None = None) -> int:
         url = eval_database_url(settings)
         ensure_database(url)
         engine = create_engine(url, pool_pre_ping=True)
+        lock = try_lock(engine)
+        if lock is None:
+            engine.dispose()
+            out.write(
+                f"Another eval runner is using {make_url(url).database}. Wait for it to "
+                "finish (or stop it), then run this again.\n"
+            )
+            return EXIT_BUSY
         upgrade_head(engine)
         meta["sessions"].append({"started_at": clock.now().isoformat(), "git_sha": git_sha()})
         state.save_meta(meta)
@@ -357,6 +388,7 @@ def main(argv: list[str] | None = None) -> int:
             stop_reason = "interrupted"
             out.write("\ninterrupted; the unfinished run was not saved\n")
         finally:
+            release_lock(lock)
             engine.dispose()
         out.write(f"\nThis session: {ran} runs, {used:,} tokens.\n")
 

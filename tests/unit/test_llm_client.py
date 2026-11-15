@@ -203,6 +203,8 @@ def test_extract_json_errors(text: str | None) -> None:
 def test_models_resolution() -> None:
     assert resolve_model("groq", None) == DEFAULT_MODELS["groq"]
     assert resolve_model("groq", "custom") == "custom"
+    assert resolve_model("fake", "openai/gpt-oss-120b") == "fake-v1"  # leftover real model
+    assert resolve_model("fake", "fake-v2") == "fake-v2"
     assert litellm_model("groq", "openai/gpt-oss-120b") == "groq/openai/gpt-oss-120b"
     assert litellm_model("ollama", "llama3.2") == "ollama_chat/llama3.2"
     assert litellm_model("gemini", "gemini/x") == "gemini/x"

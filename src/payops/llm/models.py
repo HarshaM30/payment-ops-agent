@@ -46,6 +46,10 @@ def daily_limit(provider: str, model: str) -> DailyLimit:
 
 
 def resolve_model(provider: str, model: str | None) -> str:
+    # The fake provider ignores a real model name left in LLM_MODEL (e.g. switching to
+    # LLM_PROVIDER=fake for a smoke run), so reports never mislabel fake results.
+    if provider == "fake" and model and not model.startswith("fake"):
+        return DEFAULT_MODELS["fake"]
     return model or DEFAULT_MODELS[provider]
 
 

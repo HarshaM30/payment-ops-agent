@@ -13,10 +13,21 @@ in the `outbox` table.
 
 Requirements: [uv](https://docs.astral.sh/uv/), Docker, and Python 3.12 (uv installs it if needed).
 
+**With Docker only** (the API runs in a container and applies migrations on start):
+
 ```bash
 cp .env.example .env      # then set API_KEY and SESSION_SECRET (see comments in the file)
+make up                   # builds the image, starts Postgres 16 + the API on :8000
+docker compose exec api python -m scripts.seed
+open http://localhost:8000/docs
+```
+
+**For development** (the API runs on your machine with reload):
+
+```bash
+cp .env.example .env      # as above
 make install              # uv sync
-make up                   # Postgres 16 in Docker
+make db                   # only Postgres 16 in Docker
 make migrate              # alembic upgrade head
 make seed                 # deterministic synthetic customers, invoices, payments
 make run                  # http://localhost:8000/docs
@@ -42,7 +53,7 @@ itself (`LLM_REQUESTS_PER_MINUTE`, `LLM_TOKENS_PER_MINUTE`) to stay under them.
 | Method | Path | Notes |
 |---|---|---|
 | `GET` | `/health` | Open. `200` with DB status, `503` if the DB is unreachable |
-| `POST` | `/runs` | `{"invoice_ids": [...]}` or `{"scope": "all_overdue"}`, optional `max_invoices`. Returns `202` + run id |
+| `POST` | `/runs` | `{"invoice_ids": [...]}` or `{"scope": "all_overdue"}`, optional `max_invoices`. Returns `202` + run id. Optional `Idempotency-Key` header: a retry returns the same run; the same key with another body is `409` |
 | `GET` | `/runs/{id}` | Status, token/latency totals, and the ordered trace from `audit_log` |
 | `GET` | `/approvals?status=pending` | Paginated (`limit` ≤ 200, `cursor`) |
 | `POST` | `/approvals/{id}/approve` | `{"approver": "..."}`. Sends the drafted message as written (an outbox row); `409` if already decided or now blocked by policy |
@@ -50,6 +61,9 @@ itself (`LLM_REQUESTS_PER_MINUTE`, `LLM_TOKENS_PER_MINUTE`) to stay under them.
 | `GET` | `/audit?run_id=&event_type=&limit=&cursor=` | Paginated audit log, newest first |
 
 Errors always look like `{"error": {"code": "...", "message": "...", "details": [...]}}`.
+Every response carries an `X-Request-ID` (yours if you send a valid one), which also appears
+in every log line for that request. A database outage returns `503` with `Retry-After`, and
+a request slower than `REQUEST_TIMEOUT_SECONDS` returns `504`.
 Interactive docs with examples are at `/docs` (use **Authorize** to set the key).
 
 ## How a run works
@@ -101,9 +115,38 @@ and wrapped by `@audited`, so every call writes exactly one `audit_log` row:
 ```bash
 make lint        # ruff check + format check
 make test-unit   # no database, no API keys
-make test-int    # needs `make up`
+make test-int    # needs `make db` (or `make up`)
 make cov         # all tests + coverage gate on tools/, services/, api/
 ```
+
+## Evaluation
+
+`make eval` runs the 40 scenarios in `evals/datasets/v1/` through the real agent graph,
+each in a fresh, dedicated eval database (`payops_eval`), and writes a markdown report to
+`evals/reports/`. It scores decision accuracy, task success, tool-call precision/recall,
+policy violations caught vs. reaching the outbox, p95 latency, and tokens.
+
+```bash
+make eval LLM_PROVIDER=fake         # smoke run, no API key (what CI runs)
+make eval                           # with the provider in .env, e.g. Groq
+make eval REPEATS=3                 # metrics as mean ± std, plus per-scenario consistency
+make eval LIMIT=10                  # stop after 10 more scenarios
+make eval-compare A=evals/reports/<a>.md B=evals/reports/<b>.md
+```
+
+A full Groq run needs more tokens than the free tier's daily quota, so the runner is
+resumable: each finished scenario is saved to `evals/runs/<config>/results.jsonl`, a
+rerun skips them, a rate limit stops the run cleanly (exit code 75), and the report is
+written once all scenarios are done. Just run the same `make eval` again the next day.
+
+## Load testing
+
+```bash
+LLM_PROVIDER=fake docker compose up -d --wait --build
+make bench                          # Locust: 50 users for 5 minutes (USERS=, SPAWN=, TIME=)
+```
+
+Results and machine specs are in [benchmarks/results.md](benchmarks/results.md).
 
 ## Seed scenarios
 

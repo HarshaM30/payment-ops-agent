@@ -191,6 +191,22 @@ def test_collect_rechecks_outbox_independently(env: dict[str, Any]) -> None:
     assert again["outbox_violations"] == ["NO_DISCOUNT_PROMISES"]
 
 
+def test_second_runner_on_the_same_database_refuses(
+    env: dict[str, Any], capsys: pytest.CaptureFixture[str]
+) -> None:
+    engine = create_engine(env["eval_url"])
+    try:
+        holder = runner.try_lock(engine)  # another runner is mid-session
+        assert holder is not None
+        assert run(env) == runner.EXIT_BUSY
+        assert results(env) == []
+        assert "Another eval runner is using" in capsys.readouterr().out
+        runner.release_lock(holder)
+        assert run(env, "--limit", "1") == 0  # free again
+    finally:
+        engine.dispose()
+
+
 def test_refuses_to_use_the_main_database(
     env: dict[str, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
