@@ -193,13 +193,13 @@ payment-ops-agent/
 6. Every node decision, LLM call, and policy result is written to `audit_log`.
 
 **Done when**
-- [ ] Each policy rule has unit tests for both allow and block cases (table-driven)
-- [ ] A disputed-invoice scenario can never produce an outbox reminder, even when the fake LLM tries to (tested)
-- [ ] A draft containing "10% discount" is never executed (tested)
-- [ ] An integration test runs the full graph with `FakeLLM` against real Postgres, end to end
-- [ ] The retry layer is tested with a simulated 429 → backoff → success, and 429s exhausted → clean failure
-- [ ] One real run against Groq succeeds by hand, and its trace is visible in `GET /runs/{id}`
-- [ ] `GET /runs/{id}` shows an ordered trace with tokens and latency per step
+- [x] Each policy rule has unit tests for both allow and block cases (table-driven)
+- [x] A disputed-invoice scenario can never produce an outbox reminder, even when the fake LLM tries to (tested)
+- [x] A draft containing "10% discount" is never executed (tested)
+- [x] An integration test runs the full graph with `FakeLLM` against real Postgres, end to end
+- [x] The retry layer is tested with a simulated 429 → backoff → success, and 429s exhausted → clean failure
+- [x] One real run against Groq succeeds by hand, and its trace is visible in `GET /runs/{id}`
+- [x] `GET /runs/{id}` shows an ordered trace with tokens and latency per step
 
 ---
 
@@ -295,8 +295,9 @@ Agreed on 2026-11-15. These override anything in the original spec they conflict
 11. **API key auth (Milestone 2).** Every endpoint except `GET /health` requires an `X-API-Key` header matching `API_KEY`. The key is compared in constant time and is never logged.
 12. **Approvals page (Milestone 6).** Minimal server-rendered HTML with Jinja2; no React or JS framework. It logs in with the API key once and uses a signed session cookie (`SESSION_SECRET`) with CSRF tokens on form posts.
 13. **Eval repeats (Milestone 4).** `--repeats N` / `EVAL_REPEATS`, default 1. With N > 1, metrics are reported as mean ± std, plus a per-scenario consistency score.
-14. **Model names.** Current free-tier model names for Groq, Gemini, and Ollama are checked and picked at the start of Milestone 3. The model in `.env.example` is a placeholder until then.
+14. **Model names.** Checked and picked at the start of Milestone 3 (2026-11-15): Groq `openai/gpt-oss-120b` (Groq's Llama models now need an Enterprise plan), Gemini `gemini-3.5-flash-lite`, Ollama `llama3.2`. They live in `llm/models.py`; an empty `LLM_MODEL` means "provider default".
 
 **Environment variables added**
 
 - `API_KEY`, `SESSION_SECRET`, `EVAL_REPEATS` (all in `.env.example` with placeholder values)
+- `PROMPT_VERSION`, `RESEARCH_MAX_STEPS` (Milestone 3)

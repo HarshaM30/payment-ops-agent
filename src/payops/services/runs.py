@@ -1,4 +1,7 @@
-"""Agent run lifecycle. Milestone 2 stores runs as `queued`; Milestone 3 executes them."""
+"""Agent run records: create (queued) and read (status + trace).
+
+Execution lives in ``payops.agents.runner``.
+"""
 
 import uuid
 
@@ -10,6 +13,8 @@ from payops.db.models.enums import RunStatus
 from payops.errors import InvalidInputError, NotFoundError
 from payops.schemas.api import RunCreate, RunTotals
 from payops.services import audit
+
+LEAF_EVENT_TYPES = frozenset({"llm_call", "tool_call"})
 
 
 def create_run(session: Session, req: RunCreate, *, actor: str = "api") -> AgentRun:
@@ -68,6 +73,8 @@ def get_run(session: Session, run_id: uuid.UUID) -> tuple[AgentRun, list[AuditLo
         prompt_tokens=sum(t.prompt_tokens or 0 for t in trace),
         completion_tokens=sum(t.completion_tokens or 0 for t in trace),
         total_tokens=sum(t.total_tokens or 0 for t in trace),
-        latency_ms=sum(t.latency_ms or 0 for t in trace),
+        # Node and policy steps wrap the LLM/tool calls they make, so only leaf steps
+        # are summed; otherwise time would be counted twice.
+        latency_ms=sum(t.latency_ms or 0 for t in trace if t.event_type in LEAF_EVENT_TYPES),
     )
     return run, trace, totals

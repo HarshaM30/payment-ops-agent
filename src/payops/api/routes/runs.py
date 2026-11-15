@@ -1,6 +1,8 @@
 import uuid
+from collections.abc import Callable
+from typing import Annotated
 
-from fastapi import APIRouter, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, Response
 
 from payops.api.deps import SessionDep, responses
 from payops.schemas.api import RunCreate, RunCreated, RunDetail, TraceEntry
@@ -8,14 +10,32 @@ from payops.services import runs as run_service
 
 router = APIRouter(prefix="/runs", tags=["runs"])
 
+RunExecutor = Callable[[uuid.UUID], None]
+
+
+def get_run_executor() -> RunExecutor:
+    """What executes a run after the response is sent. Tests override this."""
+    from payops.agents.runner import run_in_background
+
+    return run_in_background
+
 
 @router.post("", status_code=202, response_model=RunCreated, summary="Start an agent run")
-def create_run(body: RunCreate, session: SessionDep, response: Response) -> RunCreated:
-    """Queue a run over the given invoices, or over all overdue invoices.
+def create_run(
+    body: RunCreate,
+    session: SessionDep,
+    response: Response,
+    background: BackgroundTasks,
+    executor: Annotated[RunExecutor, Depends(get_run_executor)],
+) -> RunCreated:
+    """Queue a run over the given invoices, or over all past-due invoices.
 
-    Returns **202** right away; poll `GET /runs/{id}` for status and the trace.
+    Returns **202** right away and executes the agent in the background; poll
+    `GET /runs/{id}` for status and the trace. A `scope` run without `max_invoices`
+    handles at most the 20 highest-priority invoices.
     """
     run = run_service.create_run(session, body)
+    background.add_task(executor, run.id)
     response.headers["Location"] = f"/runs/{run.id}"
     return RunCreated(run_id=run.id, status=run.status)
 

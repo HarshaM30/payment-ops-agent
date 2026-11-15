@@ -8,7 +8,7 @@ from decimal import Decimal
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field, SecretStr, model_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 MIN_SECRET_LENGTH = 32
@@ -34,9 +34,24 @@ class Settings(BaseSettings):
     db_pool_size: int = Field(default=5, ge=1, le=100)
     db_connect_timeout_seconds: int = Field(default=5, ge=1, le=60)
 
-    # LLM (used from Milestone 3)
+    # LLM
     llm_provider: Literal["groq", "gemini", "ollama", "fake"] = "fake"
-    llm_model: str = "placeholder"
+    # Empty means "use the provider default" from payops.llm.models.
+    llm_model: str | None = None
+    llm_temperature: float = Field(default=0.2, ge=0, le=2)
+    llm_timeout_seconds: float = Field(default=30, gt=0, le=600)
+    llm_max_retries: int = Field(default=5, ge=0, le=20)
+    llm_backoff_base_seconds: float = Field(default=1.0, ge=0, le=60)
+    llm_backoff_max_seconds: float = Field(default=60, ge=0, le=600)
+    llm_requests_per_minute: int = Field(default=25, ge=0, le=10_000)  # 0 disables
+    llm_tokens_per_minute: int = Field(default=5000, ge=0, le=10_000_000)  # 0 disables
+    groq_api_key: SecretStr | None = None
+    gemini_api_key: SecretStr | None = None
+    ollama_api_base: str = "http://localhost:11434"
+
+    # Agent
+    prompt_version: str = Field(default="v1", pattern=r"^v\d+$")
+    research_max_steps: int = Field(default=5, ge=1, le=20)
 
     # Policy
     approval_threshold_amount: Decimal = Field(default=Decimal("10000"), gt=0)
@@ -45,6 +60,11 @@ class Settings(BaseSettings):
     # Seed
     seed_random_seed: int = 42
     seed_num_customers: int = Field(default=60, ge=30, le=10_000)
+
+    @field_validator("llm_model", mode="before")
+    @classmethod
+    def _blank_model_is_default(cls, value: object) -> object:
+        return None if isinstance(value, str) and not value.strip() else value
 
     @model_validator(mode="after")
     def _check_secrets(self) -> "Settings":

@@ -106,7 +106,7 @@ class RunTotals(BaseModel):
     prompt_tokens: int
     completion_tokens: int
     total_tokens: int
-    latency_ms: int
+    latency_ms: int = Field(description="Sum of LLM and tool call latencies")
 
 
 class RunDetail(BaseModel):

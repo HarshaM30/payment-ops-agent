@@ -1,6 +1,6 @@
 """Write tools. They only create *proposed* `actions` rows; nothing is ever sent from here.
 
-Sending happens later, and only for actions that passed the policy engine (Milestone 3)
+Sending happens later, and only for actions that passed the policy engine
 and, where required, human approval (`services/approvals.py`).
 """
 

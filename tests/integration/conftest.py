@@ -15,6 +15,7 @@ from sqlalchemy import Engine, create_engine, make_url, text
 from sqlalchemy.orm import Session
 
 from payops.api.routes.health import get_db_check
+from payops.api.routes.runs import get_run_executor
 from payops.config import get_settings
 from payops.db.session import check_db, get_session
 from payops.main import create_app
@@ -98,5 +99,7 @@ def client(engine: Engine, db_session: Session) -> Iterator[TestClient]:
     app = create_app()
     app.dependency_overrides[get_session] = lambda: db_session
     app.dependency_overrides[get_db_check] = lambda: lambda: check_db(engine)
+    # Runs are executed explicitly by the tests that need it, never against the dev DB.
+    app.dependency_overrides[get_run_executor] = lambda: lambda run_id: None
     with TestClient(app, headers={"X-API-Key": TEST_API_KEY}) as c:
         yield c
