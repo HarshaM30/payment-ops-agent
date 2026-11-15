@@ -23,6 +23,14 @@ class Settings(BaseSettings):
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     api_host: str = "0.0.0.0"  # noqa: S104 - bound inside a container / dev machine
     api_port: int = Field(default=8000, ge=1, le=65535)
+    # Requests taking longer get a 504 (the work itself is not cancelled; see main.py).
+    request_timeout_seconds: float = Field(default=30, gt=0, le=600)
+    # At startup, mark runs left queued/running by a previous process as failed. Runs
+    # execute in-process, so they cannot survive a restart (one API process per DB).
+    run_recovery_on_startup: bool = True
+    # If a run crashes and even recording the failure fails (e.g. the database is down),
+    # keep retrying to mark it failed for this long.
+    run_fail_retry_seconds: float = Field(default=120, ge=0, le=3600)
 
     # API security
     api_key: SecretStr | None = None
@@ -32,7 +40,10 @@ class Settings(BaseSettings):
     database_url: str = Field(min_length=1)
     test_database_url: str | None = None
     db_pool_size: int = Field(default=5, ge=1, le=100)
+    db_max_overflow: int = Field(default=10, ge=0, le=100)
+    db_pool_timeout_seconds: float = Field(default=10, gt=0, le=120)
     db_connect_timeout_seconds: int = Field(default=5, ge=1, le=60)
+    db_statement_timeout_ms: int = Field(default=15_000, ge=0, le=600_000)  # 0 disables
 
     # LLM
     llm_provider: Literal["groq", "gemini", "ollama", "fake"] = "fake"
@@ -48,6 +59,8 @@ class Settings(BaseSettings):
     groq_api_key: SecretStr | None = None
     gemini_api_key: SecretStr | None = None
     ollama_api_base: str = "http://localhost:11434"
+    # Simulated per-call latency for the fake provider (load tests, demos). 0 = instant.
+    fake_llm_latency_ms: int = Field(default=0, ge=0, le=60_000)
 
     # Agent
     prompt_version: str = Field(default="v1", pattern=r"^v\d+$")

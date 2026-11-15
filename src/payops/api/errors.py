@@ -12,6 +12,8 @@ from fastapi import FastAPI, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import TimeoutError as PoolTimeoutError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from payops.errors import AppError
@@ -27,7 +29,9 @@ _HTTP_CODES = {
     409: "conflict",
     422: "validation_error",
     503: "service_unavailable",
+    504: "timeout",
 }
+DB_RETRY_AFTER_SECONDS = "5"
 
 
 def error_body(code: str, message: str, details: list[Any] | None = None) -> dict[str, Any]:
@@ -70,6 +74,21 @@ def install_error_handlers(app: FastAPI) -> None:
         code = _HTTP_CODES.get(exc.status_code, "error")
         message = exc.detail if isinstance(exc.detail, str) else code.replace("_", " ")
         return error_response(exc.status_code, code, message, headers=exc.headers)
+
+    @app.exception_handler(OperationalError)
+    @app.exception_handler(PoolTimeoutError)
+    async def _db_unavailable(request: Request, exc: Exception) -> JSONResponse:
+        # Database down, connection lost, statement timeout, or pool exhausted: tell the
+        # client to retry instead of returning a generic 500.
+        logger.warning(
+            "database_unavailable", extra={"path": request.url.path, "error": type(exc).__name__}
+        )
+        return error_response(
+            503,
+            "service_unavailable",
+            "Database unavailable, try again shortly",
+            headers={"Retry-After": DB_RETRY_AFTER_SECONDS},
+        )
 
     @app.exception_handler(Exception)
     async def _unhandled(request: Request, exc: Exception) -> JSONResponse:

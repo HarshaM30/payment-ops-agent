@@ -13,6 +13,7 @@ A scripted item may be: a ``str`` (raw content), a ``dict`` (sent as JSON conten
 """
 
 import json
+import time
 from collections import defaultdict, deque
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
@@ -34,6 +35,7 @@ class FakeToolCalls:
 class FakeLLM:
     script: dict[tuple[str, str], Iterable[ScriptItem]] = field(default_factory=dict)
     requests: list[LLMRequest] = field(default_factory=list)
+    latency_seconds: float = 0.0  # simulated provider latency (FAKE_LLM_LATENCY_MS)
 
     def __post_init__(self) -> None:
         self._queues: dict[tuple[str, str], deque[ScriptItem]] = defaultdict(deque)
@@ -52,6 +54,8 @@ class FakeLLM:
 
     def complete(self, request: LLMRequest, *, timeout: float) -> Completion:
         self.requests.append(request)
+        if self.latency_seconds:
+            time.sleep(self.latency_seconds)
         item = self._scripted(request)
         if item is None:
             item = _HEURISTICS[request.node](request)

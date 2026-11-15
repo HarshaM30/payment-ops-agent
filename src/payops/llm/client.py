@@ -309,7 +309,7 @@ def build_client(settings: Settings | None = None, *, backend: Backend | None = 
         if provider == "fake":
             from payops.llm.fake import FakeLLM
 
-            backend = FakeLLM()
+            backend = FakeLLM(latency_seconds=settings.fake_llm_latency_ms / 1000)
         else:
             backend = LiteLLMBackend(settings, model)
     throttle = (

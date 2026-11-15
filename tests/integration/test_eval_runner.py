@@ -9,6 +9,7 @@ from typing import Any
 
 import pytest
 from sqlalchemy import create_engine, make_url, select
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 import payops.agents.runner as agent_runner
@@ -120,6 +121,16 @@ def test_rate_limit_stops_without_saving(
     assert "rate-limited, not saved" in out
     assert "Continue with:  make eval" in out
     assert not env["reports"].exists()
+
+
+def test_database_outage_stops_without_saving(
+    env: dict[str, Any], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    down = OperationalError("INSERT", {}, ConnectionResetError("server closed the connection"))
+    use_llm(monkeypatch, FakeLLM().add("drafting", "*", down))
+    assert run(env) == runner.EXIT_RATE_LIMITED
+    assert results(env) == []
+    assert "database error, not saved" in capsys.readouterr().out
 
 
 def test_repeats_report_mean_and_std(env: dict[str, Any]) -> None:

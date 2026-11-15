@@ -7,7 +7,12 @@ merged into the object, so request logs can carry method/path/status/latency.
 import json
 import logging
 import sys
+from contextvars import ContextVar
 from datetime import UTC, datetime
+
+# Set per HTTP request by the request-ID middleware; copied into every log line, including
+# lines logged from the threadpool and background tasks the request started.
+request_id_var: ContextVar[str | None] = ContextVar("request_id", default=None)
 
 _RESERVED = set(logging.LogRecord("", 0, "", 0, "", None, None).__dict__) | {"message", "asctime"}
 
@@ -20,6 +25,9 @@ class JsonFormatter(logging.Formatter):
             "logger": record.name,
             "msg": record.getMessage(),
         }
+        request_id = request_id_var.get()
+        if request_id:
+            payload["request_id"] = request_id
         for key, value in record.__dict__.items():
             if key not in _RESERVED and not key.startswith("_"):
                 payload[key] = value

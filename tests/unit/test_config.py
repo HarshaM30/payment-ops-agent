@@ -60,3 +60,15 @@ def test_invalid_values_rejected() -> None:
 
 def test_secret_not_in_repr() -> None:
     assert GOOD_KEY not in repr(make())
+
+
+def test_every_setting_is_documented_in_env_example() -> None:
+    import re
+    from pathlib import Path
+
+    from payops.config import Settings
+
+    text = (Path(__file__).resolve().parents[2] / ".env.example").read_text()
+    documented = set(re.findall(r"^([A-Z_]+)=", text, re.MULTILINE))
+    missing = sorted(f.upper() for f in Settings.model_fields if f.upper() not in documented)
+    assert missing == [], f"add these to .env.example: {missing}"

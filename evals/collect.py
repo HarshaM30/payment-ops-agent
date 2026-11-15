@@ -25,6 +25,8 @@ _SECRETS = (
     (re.compile(r"(gsk|AIza)[A-Za-z0-9_\-]{10,}"), "***"),  # API-key shapes, just in case
 )
 RATE_LIMIT_MARKERS = ("RateLimitError", "rate limit", "rate_limit_exceeded")
+# The eval's own database went away mid-run: not the agent's fault, so not scored.
+INFRASTRUCTURE_MARKERS = ("OperationalError", "InterfaceError")
 
 
 def scrub(text: str | None) -> str | None:
@@ -38,6 +40,10 @@ def scrub(text: str | None) -> str | None:
 def is_rate_limited(error: str | None) -> bool:
     """A run that died on the provider's rate limit (e.g. the daily token quota)."""
     return bool(error) and any(m.lower() in error.lower() for m in RATE_LIMIT_MARKERS)
+
+
+def is_infrastructure_error(error: str | None) -> bool:
+    return bool(error) and any(m in error for m in INFRASTRUCTURE_MARKERS)
 
 
 def _outbox_violations(session: Session, threshold: Any, action: Action, row: Outbox) -> list[str]:

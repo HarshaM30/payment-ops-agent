@@ -25,6 +25,9 @@ class AgentRun(TimestampMixin, Base):
     llm_model: Mapped[str | None] = mapped_column(String(100))
     prompt_version: Mapped[str | None] = mapped_column(String(50))
     error: Mapped[str | None] = mapped_column(Text)
+    # Idempotency-Key header of POST /runs, and a hash of the request body it was used with.
+    idempotency_key: Mapped[str | None] = mapped_column(String(200), unique=True)
+    request_hash: Mapped[str | None] = mapped_column(String(64))
     started_at: Mapped[datetime | None]
     finished_at: Mapped[datetime | None]
 

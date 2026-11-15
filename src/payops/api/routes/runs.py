@@ -2,7 +2,7 @@ import uuid
 from collections.abc import Callable
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, Response
 
 from payops.api.deps import SessionDep, responses
 from payops.schemas.api import RunCreate, RunCreated, RunDetail, TraceEntry
@@ -11,6 +11,17 @@ from payops.services import runs as run_service
 router = APIRouter(prefix="/runs", tags=["runs"])
 
 RunExecutor = Callable[[uuid.UUID], None]
+IdempotencyKey = Annotated[
+    str | None,
+    Header(
+        alias="Idempotency-Key",
+        min_length=1,
+        max_length=200,
+        pattern=r"^[\x21-\x7e]+$",
+        description="Optional. Retrying with the same key and body returns the original run "
+        "instead of starting a new one; the same key with a different body is a 409.",
+    ),
+]
 
 
 def get_run_executor() -> RunExecutor:
@@ -20,13 +31,20 @@ def get_run_executor() -> RunExecutor:
     return run_in_background
 
 
-@router.post("", status_code=202, response_model=RunCreated, summary="Start an agent run")
+@router.post(
+    "",
+    status_code=202,
+    response_model=RunCreated,
+    summary="Start an agent run",
+    responses=responses(409),
+)
 def create_run(
     body: RunCreate,
     session: SessionDep,
     response: Response,
     background: BackgroundTasks,
     executor: Annotated[RunExecutor, Depends(get_run_executor)],
+    idempotency_key: IdempotencyKey = None,
 ) -> RunCreated:
     """Queue a run over the given invoices, or over all past-due invoices.
 
@@ -34,8 +52,11 @@ def create_run(
     `GET /runs/{id}` for status and the trace. A `scope` run without `max_invoices`
     handles at most the 20 highest-priority invoices.
     """
-    run = run_service.create_run(session, body)
-    background.add_task(executor, run.id)
+    run, replayed = run_service.create_run(session, body, idempotency_key=idempotency_key)
+    if replayed:
+        response.headers["Idempotent-Replayed"] = "true"
+    else:
+        background.add_task(executor, run.id)
     response.headers["Location"] = f"/runs/{run.id}"
     return RunCreated(run_id=run.id, status=run.status)
 

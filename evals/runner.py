@@ -10,7 +10,9 @@ rate-limits a run (for example the daily token quota runs out), that run is disc
 the runner stops, and it prints the command to continue later. The markdown report is
 written only once every scenario run is done.
 
-Exit codes: 0 done (or stopped by --limit / --token-budget), 75 stopped by a rate limit.
+A run that fails because the eval database itself went away is treated the same way:
+discarded, not scored. Exit codes: 0 done (or stopped by --limit / --token-budget),
+75 stopped by a rate limit or a database outage (try again later).
 """
 
 import argparse
@@ -30,7 +32,7 @@ from sqlalchemy import Engine, create_engine, make_url
 from sqlalchemy.orm import Session
 
 from evals import fixtures
-from evals.collect import collect, is_rate_limited
+from evals.collect import collect, is_infrastructure_error, is_rate_limited
 from evals.dataset import DATASETS_DIR, Dataset, Scenario, load_dataset
 from evals.report import render
 from payops import clock
@@ -179,7 +181,7 @@ def run_scenario(
     with Session(engine, expire_on_commit=False) as session:
         fixtures.reset(session)
         invoice_ids = fixtures.load(session, scenario, clock.today())
-        run = create_run(session, RunCreate(invoice_ids=invoice_ids), actor="eval")
+        run, _ = create_run(session, RunCreate(invoice_ids=invoice_ids), actor="eval")
         t0 = time.perf_counter()
         execute_run(session, run.id, settings=settings)
         latency = round((time.perf_counter() - t0) * 1000)
@@ -257,6 +259,8 @@ def parse_args(argv: list[str] | None, settings: Settings) -> argparse.Namespace
 
 def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(name)s: %(message)s")
+    # A failed run's error is already in its result line; skip the agent's traceback.
+    logging.getLogger("payops.runner").setLevel(logging.CRITICAL)
     settings = get_settings()
     args = parse_args(argv, settings)
     out = sys.stdout
@@ -336,6 +340,10 @@ def main(argv: list[str] | None = None) -> int:
                     out.write(f"rate-limited, not saved\n  {result['error'][:300]}\n")
                     stop_reason = "rate_limit"
                     break
+                if result["run_status"] == "failed" and is_infrastructure_error(result["error"]):
+                    out.write(f"database error, not saved\n  {result['error'][:300]}\n")
+                    stop_reason = "infrastructure"
+                    break
                 state.append(result)
                 results.append(result)
                 done.add((scenario.id, rep))
@@ -356,6 +364,7 @@ def main(argv: list[str] | None = None) -> int:
     if remaining:
         why = {
             "rate_limit": "The provider rate limit was reached (likely the daily quota).",
+            "infrastructure": "The eval database failed mid-run.",
             "limit": f"Stopped after --limit {args.limit} runs.",
             "budget": f"Stopped before exceeding --token-budget {args.token_budget:,}."
             if args.token_budget
@@ -366,7 +375,7 @@ def main(argv: list[str] | None = None) -> int:
             f"{why} {len(done)}/{total} runs done, {remaining} left. No report yet.\n"
             f"Continue with:  {resume_command(args)}\n"
         )
-        return EXIT_RATE_LIMITED if stop_reason == "rate_limit" else 0
+        return EXIT_RATE_LIMITED if stop_reason in {"rate_limit", "infrastructure"} else 0
 
     if meta.get("report") and not args.rebuild_report and (ROOT / meta["report"]).exists():
         out.write(f"All runs done. Report: {meta['report']} (use --rebuild-report for a new one)\n")

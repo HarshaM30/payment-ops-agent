@@ -22,7 +22,7 @@ PROTECTED_RESPONSES: dict[int | str, dict[str, Any]] = {
 
 
 def responses(*codes: int) -> dict[int | str, dict[str, Any]]:
-    descriptions = {404: "Not found", 409: "Already decided"}
+    descriptions = {404: "Not found", 409: "Conflict (already decided, or key reused)"}
     return {c: {"model": ErrorResponse, "description": descriptions[c]} for c in codes}
 
 

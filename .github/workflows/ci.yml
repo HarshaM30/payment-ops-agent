@@ -68,3 +68,12 @@ jobs:
         run: |
           uv run pytest --cov=payops --cov-report=term-missing
           uv run coverage report --include='src/payops/tools/*,src/payops/services/*,src/payops/api/*' --fail-under=85
+
+  docker:
+    name: Docker image (amd64)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: docker build -t payops-api:ci .
+      - name: Image runs as a non-root user
+        run: test "$(docker run --rm --entrypoint id payops-api:ci -u)" = "10001"

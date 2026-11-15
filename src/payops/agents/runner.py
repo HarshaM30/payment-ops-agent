@@ -1,10 +1,12 @@
 """Executes a queued run: status transitions, the graph, and clean failure handling."""
 
 import logging
+import time
 import uuid
+from collections.abc import Callable
 
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from payops import clock
 from payops.agents.facts import candidate_invoice_ids
@@ -163,10 +165,86 @@ def _fail(session: Session, run_id: uuid.UUID, exc: BaseException) -> AgentRun:
     return run
 
 
-def run_in_background(run_id: uuid.UUID) -> None:
-    """Entry point for FastAPI BackgroundTasks: its own session, never raises."""
+INTERRUPTED_ERROR = "Interrupted: the API process stopped before the run finished"
+UNFINISHED = (RunStatus.QUEUED, RunStatus.RUNNING)
+
+
+def mark_failed(session: Session, run_id: uuid.UUID, message: str) -> bool:
+    """Set an unfinished run to ``failed``. Returns False if it had already finished."""
+    run = session.get(AgentRun, run_id, with_for_update=True)
+    if run is None or run.status not in UNFINISHED:
+        session.rollback()
+        return False
+    run.status = RunStatus.FAILED
+    run.error = message[:MAX_ERROR_LENGTH]
+    run.finished_at = clock.now()
+    audit.record(
+        session, event_type="run_failed", name="runner", run_id=run_id, actor="agent", error=message
+    )
+    session.commit()
+    return True
+
+
+def mark_failed_with_retry(
+    run_id: uuid.UUID,
+    message: str,
+    *,
+    sessions: Callable[[], sessionmaker[Session]] = get_sessionmaker,
+    deadline_seconds: float | None = None,
+    sleep: Callable[[float], None] = time.sleep,
+    monotonic: Callable[[], float] = time.monotonic,
+) -> bool:
+    """Keep trying to record the failure while the database is unreachable."""
+    if deadline_seconds is None:
+        deadline_seconds = get_settings().run_fail_retry_seconds
+    give_up_at = monotonic() + deadline_seconds
+    delay = 1.0
+    while True:
+        try:
+            with sessions()() as session:
+                return mark_failed(session, run_id, message)
+        except Exception as exc:
+            if monotonic() + delay > give_up_at:
+                logger.error(
+                    "could not mark run failed; startup recovery will",
+                    extra={"run_id": str(run_id), "error": type(exc).__name__},
+                )
+                return False
+            sleep(delay)
+            delay = min(delay * 2, 15.0)
+
+
+def run_in_background(
+    run_id: uuid.UUID, *, sessions: Callable[[], sessionmaker[Session]] = get_sessionmaker
+) -> None:
+    """Entry point for FastAPI BackgroundTasks: its own session, never raises.
+
+    ``execute_run`` already turns failures into a ``failed`` run. This catches the case
+    where even that fails (typically the database went away mid-run): the run must not
+    stay ``running`` forever, so recording the failure is retried until the database is
+    back (or the deadline passes, and startup recovery handles it).
+    """
     try:
-        with get_sessionmaker()() as session:
+        with sessions()() as session:
             execute_run(session, run_id)
-    except Exception:
+    except Exception as exc:
         logger.exception("background run crashed", extra={"run_id": str(run_id)})
+        message = f"{type(exc).__name__}: {exc}"
+        mark_failed_with_retry(run_id, message, sessions=sessions)
+
+
+def recover_interrupted_runs(
+    sessions: Callable[[], sessionmaker[Session]] = get_sessionmaker,
+) -> int:
+    """At startup: runs still queued/running belong to a process that no longer exists.
+
+    Runs execute in-process (BackgroundTasks), so they can't survive a restart. This
+    assumes one API process per database; with several replicas, runs would move to a
+    real job queue.
+    """
+    with sessions()() as session:
+        ids = list(session.scalars(select(AgentRun.id).where(AgentRun.status.in_(UNFINISHED))))
+        recovered = sum(mark_failed(session, run_id, INTERRUPTED_ERROR) for run_id in ids)
+    if recovered:
+        logger.warning("marked interrupted runs as failed", extra={"count": recovered})
+    return recovered

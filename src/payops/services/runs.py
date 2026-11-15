@@ -3,21 +3,49 @@
 Execution lives in ``payops.agents.runner``.
 """
 
+import hashlib
 import uuid
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from payops.db.models import AgentRun, AuditLog, Invoice
 from payops.db.models.enums import RunStatus
-from payops.errors import InvalidInputError, NotFoundError
+from payops.errors import ConflictError, InvalidInputError, NotFoundError
 from payops.schemas.api import RunCreate, RunTotals
 from payops.services import audit
 
 LEAF_EVENT_TYPES = frozenset({"llm_call", "tool_call"})
 
 
-def create_run(session: Session, req: RunCreate, *, actor: str = "api") -> AgentRun:
+def request_hash(req: RunCreate) -> str:
+    return hashlib.sha256(req.model_dump_json().encode()).hexdigest()
+
+
+def _replay(session: Session, key: str, fingerprint: str) -> AgentRun | None:
+    """The run already created with this idempotency key, if any."""
+    run = session.scalar(select(AgentRun).where(AgentRun.idempotency_key == key))
+    if run is not None and run.request_hash != fingerprint:
+        raise ConflictError("Idempotency-Key was already used with a different request body")
+    return run
+
+
+def create_run(
+    session: Session, req: RunCreate, *, actor: str = "api", idempotency_key: str | None = None
+) -> tuple[AgentRun, bool]:
+    """Create a queued run. Returns ``(run, replayed)``.
+
+    With an idempotency key, a retry of the same request returns the run created the
+    first time (``replayed=True``) instead of starting a second one; the same key with a
+    different body is a 409.
+    """
+    fingerprint = request_hash(req) if idempotency_key else None
+    if idempotency_key and fingerprint:
+        existing = _replay(session, idempotency_key, fingerprint)
+        if existing is not None:
+            return existing, True
+
     requested: list[str] | None = None
     if req.invoice_ids is not None:
         found = set(session.scalars(select(Invoice.id).where(Invoice.id.in_(req.invoice_ids))))
@@ -41,9 +69,20 @@ def create_run(session: Session, req: RunCreate, *, actor: str = "api") -> Agent
         scope=req.scope,
         requested_invoice_ids=requested,
         max_invoices=req.max_invoices,
+        idempotency_key=idempotency_key,
+        request_hash=fingerprint,
     )
     session.add(run)
-    session.flush()
+    try:
+        session.flush()
+    except IntegrityError:
+        # A concurrent request with the same key won the race: return its run.
+        session.rollback()
+        if idempotency_key and fingerprint:
+            existing = _replay(session, idempotency_key, fingerprint)
+            if existing is not None:
+                return existing, True
+        raise
     audit.record(
         session,
         event_type="run_created",
@@ -51,10 +90,10 @@ def create_run(session: Session, req: RunCreate, *, actor: str = "api") -> Agent
         run_id=run.id,
         actor=actor,
         inputs=req,
-        outputs={"status": run.status.value},
+        outputs={"status": run.status.value, "idempotency_key": idempotency_key},
     )
     session.commit()
-    return run
+    return run, False
 
 
 def get_run(session: Session, run_id: uuid.UUID) -> tuple[AgentRun, list[AuditLog], RunTotals]:
