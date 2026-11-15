@@ -61,7 +61,14 @@ class Settings(BaseSettings):
     seed_random_seed: int = 42
     seed_num_customers: int = Field(default=60, ge=30, le=10_000)
 
-    @field_validator("llm_model", mode="before")
+    # Evaluation. Empty EVAL_DATABASE_URL means DATABASE_URL with an "_eval" suffix on
+    # the database name: the runner wipes it before every scenario.
+    eval_database_url: str | None = None
+    eval_dataset_version: str = Field(default="v1", pattern=r"^v\d+$")
+    eval_repeats: int = Field(default=1, ge=1, le=20)
+    eval_reports_dir: str = "evals/reports"
+
+    @field_validator("llm_model", "eval_database_url", mode="before")
     @classmethod
     def _blank_model_is_default(cls, value: object) -> object:
         return None if isinstance(value, str) and not value.strip() else value

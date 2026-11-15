@@ -62,6 +62,8 @@ jobs:
           uv run alembic downgrade base
           uv run alembic upgrade head
           uv run python -m scripts.seed
+      - name: Eval smoke run (fake LLM, no API key)
+        run: make eval REPEATS=1
       - name: Tests with coverage
         run: |
           uv run pytest --cov=payops --cov-report=term-missing

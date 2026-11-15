@@ -1,13 +1,9 @@
 from alembic import command
 from sqlalchemy import create_engine, inspect, make_url
 
+from payops.db.admin import alembic_config, drop_database, ensure_database
 from payops.db.base import Base
-from tests.integration.conftest import (
-    alembic_config,
-    drop_database,
-    ensure_database,
-    test_database_url,
-)
+from tests.integration.conftest import test_database_url
 
 
 def test_upgrade_downgrade_upgrade_and_no_drift() -> None:

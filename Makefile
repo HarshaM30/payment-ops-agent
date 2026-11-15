@@ -1,8 +1,8 @@
 .DEFAULT_GOAL := help
-.PHONY: help install up down migrate seed run lint fmt test test-unit test-int cov
+.PHONY: help install up down migrate seed run lint fmt test test-unit test-int cov eval eval-compare
 
 help: ## Show available targets
-	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-10s %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-13s %s\n", $$1, $$2}'
 
 install: ## Install runtime + dev dependencies with uv
 	uv sync
@@ -42,3 +42,9 @@ test-int: ## Integration tests against Postgres (needs `make up`)
 cov: ## All tests with coverage for tools/, services/, api/ (fails under 85%)
 	uv run pytest --cov=payops --cov-report=term-missing
 	uv run coverage report --include='src/payops/tools/*,src/payops/services/*,src/payops/api/*' --fail-under=85
+
+eval: ## Run the eval (resumable). Options: REPEATS=N DATASET=v1 LIMIT=N FRESH=1
+	uv run python -m evals.runner $(if $(REPEATS),--repeats $(REPEATS)) $(if $(DATASET),--dataset $(DATASET)) $(if $(LIMIT),--limit $(LIMIT)) $(if $(FRESH),--fresh)
+
+eval-compare: ## Diff two eval reports: make eval-compare A=evals/reports/x.md B=evals/reports/y.md
+	uv run python -m evals.report $(A) $(B)

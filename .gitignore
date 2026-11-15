@@ -44,3 +44,7 @@ benchmarks/*.html
 .vscode/
 .idea/
 .DS_Store
+
+# Eval runs with the fake provider (smoke tests, CI); real-provider runs are committed
+evals/runs/*_fake_*/
+evals/reports/*_fake-v1_*.md

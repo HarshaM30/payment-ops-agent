@@ -36,7 +36,7 @@ packages = ["src/payops"]
 [tool.ruff]
 line-length = 100
 target-version = "py312"
-src = ["src", "tests", "scripts"]
+src = ["src", "tests", "scripts", "evals"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF", "S", "N", "C4", "PT"]
@@ -46,7 +46,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["payops", "scripts", "tests"]
+known-first-party = ["payops", "scripts", "tests", "evals"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101", "S105", "S106"]

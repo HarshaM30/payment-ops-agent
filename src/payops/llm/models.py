@@ -29,6 +29,22 @@ DEFAULT_MODELS: dict[str, str] = {
 _LITELLM_PREFIX: dict[str, str] = {"groq": "groq", "gemini": "gemini", "ollama": "ollama_chat"}
 
 
+# Free-tier daily quotas, used by the eval runner to estimate how many days a full eval
+# needs. Groq values are from console.groq.com/docs/rate-limits (checked 2026-11-15):
+# gpt-oss-120b and gpt-oss-20b both allow 30 RPM, 1K RPD, 8K TPM, 200K TPD.
+# None means "no daily cap we plan around" (local Ollama, the fake provider).
+DailyLimit = tuple[int | None, int | None]  # (tokens per day, requests per day)
+
+FREE_TIER_DAILY_LIMITS: dict[tuple[str, str], DailyLimit] = {
+    ("groq", "openai/gpt-oss-120b"): (200_000, 1_000),
+    ("groq", "openai/gpt-oss-20b"): (200_000, 1_000),
+}
+
+
+def daily_limit(provider: str, model: str) -> DailyLimit:
+    return FREE_TIER_DAILY_LIMITS.get((provider, model), (None, None))
+
+
 def resolve_model(provider: str, model: str | None) -> str:
     return model or DEFAULT_MODELS[provider]
 

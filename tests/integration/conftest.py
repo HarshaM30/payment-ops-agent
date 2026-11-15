@@ -5,23 +5,19 @@ isolated even when the code under test calls ``session.commit()``.
 """
 
 from collections.abc import Iterator
-from pathlib import Path
 
 import pytest
-from alembic import command
-from alembic.config import Config
 from fastapi.testclient import TestClient
-from sqlalchemy import Engine, create_engine, make_url, text
+from sqlalchemy import Engine, create_engine
 from sqlalchemy.orm import Session
 
 from payops.api.routes.health import get_db_check
 from payops.api.routes.runs import get_run_executor
 from payops.config import get_settings
+from payops.db.admin import ensure_database, upgrade_head
 from payops.db.session import check_db, get_session
 from payops.main import create_app
 from tests.conftest import TEST_API_KEY
-
-ROOT = Path(__file__).resolve().parents[2]
 
 
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
@@ -40,41 +36,12 @@ def test_database_url() -> str:
 test_database_url.__test__ = False  # type: ignore[attr-defined]
 
 
-def ensure_database(url: str) -> None:
-    parsed = make_url(url)
-    admin = create_engine(parsed.set(database="postgres"), isolation_level="AUTOCOMMIT")
-    with admin.connect() as conn:
-        exists = conn.execute(
-            text("SELECT 1 FROM pg_database WHERE datname = :n"), {"n": parsed.database}
-        ).scalar()
-        if not exists:
-            conn.execute(text(f'CREATE DATABASE "{parsed.database}"'))
-    admin.dispose()
-
-
-def drop_database(url: str) -> None:
-    parsed = make_url(url)
-    admin = create_engine(parsed.set(database="postgres"), isolation_level="AUTOCOMMIT")
-    with admin.connect() as conn:
-        conn.execute(text(f'DROP DATABASE IF EXISTS "{parsed.database}" WITH (FORCE)'))
-    admin.dispose()
-
-
-def alembic_config(connection) -> Config:
-    cfg = Config(str(ROOT / "alembic.ini"))
-    cfg.set_main_option("script_location", str(ROOT / "migrations"))
-    cfg.attributes["connection"] = connection
-    cfg.attributes["skip_logging_config"] = True
-    return cfg
-
-
 @pytest.fixture(scope="session")
 def engine() -> Iterator[Engine]:
     url = test_database_url()
     ensure_database(url)
     eng = create_engine(url)
-    with eng.begin() as conn:
-        command.upgrade(alembic_config(conn), "head")
+    upgrade_head(eng)
     yield eng
     eng.dispose()
 
