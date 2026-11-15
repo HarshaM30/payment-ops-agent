@@ -1,0 +1,24 @@
+{
+  "approval_threshold": "10000",
+  "dataset_sha256": "dc2c42fd2da5fbebb79b6baedc94ef1192fce2f1a97f8d0be7a64de5a6f5bd99",
+  "dataset_version": "v1",
+  "llm_model": "openai/gpt-oss-120b",
+  "llm_provider": "groq",
+  "prompt_version": "v1",
+  "repeats": 1,
+  "report": null,
+  "sessions": [
+    {
+      "git_sha": "810b410e55e6",
+      "started_at": "2026-11-15T09:32:40.931620+00:00"
+    },
+    {
+      "git_sha": "1e5de47b27e2",
+      "started_at": "2026-11-15T09:46:25.135125+00:00"
+    },
+    {
+      "git_sha": "461b4b193ed9",
+      "started_at": "2026-11-15T09:52:25.572797+00:00"
+    }
+  ]
+}

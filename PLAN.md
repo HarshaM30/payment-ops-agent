@@ -220,11 +220,11 @@ payment-ops-agent/
 6. `make eval` (accepts `REPEATS=N`) and `make eval-compare A=... B=...` (diff two reports).
 
 **Done when**
-- [ ] The dataset has 40 scenarios that pass schema validation, and the dataset README documents fields
-- [ ] `make eval LLM_PROVIDER=fake` runs in CI-like conditions with no API key
+- [x] The dataset has 40 scenarios that pass schema validation, and the dataset README documents fields
+- [x] `make eval LLM_PROVIDER=fake` runs in CI-like conditions with no API key
 - [ ] The first real eval report on Groq is committed to `evals/reports/`
-- [ ] Metric functions have unit tests with hand-computed expected values, including mean ± std
-- [ ] `make eval REPEATS=3 LLM_PROVIDER=fake` produces a report with mean ± std columns; `REPEATS=1` shows plain values
+- [x] Metric functions have unit tests with hand-computed expected values, including mean ± std
+- [x] `make eval REPEATS=3 LLM_PROVIDER=fake` produces a report with mean ± std columns; `REPEATS=1` shows plain values
 - [ ] Policy violations reaching the outbox = 0 in the committed report
 
 ---
@@ -238,10 +238,10 @@ payment-ops-agent/
 4. Record results in `benchmarks/results.md`: machine specs (chip, RAM, macOS, Docker resources), users/spawn rate/duration, RPS, p50/p95/p99, error rate, plus eval metrics from M4.
 
 **Done when**
-- [ ] `docker compose up` starts the full stack from a clean clone
-- [ ] Locust runs for 5 min at the chosen concurrency with error rate < 1%
-- [ ] `benchmarks/results.md` has a filled-in table and machine specs
-- [ ] Killing Postgres mid-run produces a `failed` run and a 503 health check, not a crash
+- [x] `docker compose up` starts the full stack from a clean clone (once `API_KEY` and `SESSION_SECRET` are set, in `.env` or the shell; without them Compose stops with a clear message)
+- [x] Locust runs for 5 min at the chosen concurrency with error rate < 1% (50 users: 0 failures in 11,697 requests)
+- [x] `benchmarks/results.md` has a filled-in table and machine specs
+- [x] Killing Postgres mid-run produces a `failed` run and a 503 health check, not a crash
 
 ---
 
@@ -297,7 +297,15 @@ Agreed on 2026-11-15. These override anything in the original spec they conflict
 13. **Eval repeats (Milestone 4).** `--repeats N` / `EVAL_REPEATS`, default 1. With N > 1, metrics are reported as mean ± std, plus a per-scenario consistency score.
 14. **Model names.** Checked and picked at the start of Milestone 3 (2026-11-15): Groq `openai/gpt-oss-120b` (Groq's Llama models now need an Enterprise plan), Gemini `gemini-3.5-flash-lite`, Ollama `llama3.2`. They live in `llm/models.py`; an empty `LLM_MODEL` means "provider default".
 
+**Added during Milestones 4–5**
+
+15. **Resumable eval.** A full Groq run is about 6K tokens × 40 scenarios ≈ 240K tokens, more than the free tier's 200K tokens/day (`openai/gpt-oss-120b`: 30 RPM, 1K RPD, 8K TPM, 200K TPD, checked 2026-11-15). Each finished scenario is saved to `evals/runs/<config>/results.jsonl`; a rerun skips finished ones, a rate limit (or an eval-database outage) stops cleanly without saving the interrupted run, and the report is written only when every scenario is done. Raw results are committed next to the report.
+16. **Dedicated eval database** (`EVAL_DATABASE_URL`, default `<db>_eval`), wiped before each scenario and guarded by a Postgres advisory lock so two runners can't share it.
+17. **Runs stay in-process** (BackgroundTasks) with one API process per database: startup marks orphaned runs `failed`, and a crash while the DB is down keeps retrying to record the failure. A job queue is the next step at scale.
+
 **Environment variables added**
 
 - `API_KEY`, `SESSION_SECRET`, `EVAL_REPEATS` (all in `.env.example` with placeholder values)
 - `PROMPT_VERSION`, `RESEARCH_MAX_STEPS` (Milestone 3)
+- `EVAL_DATABASE_URL` (Milestone 4)
+- `REQUEST_TIMEOUT_SECONDS`, `RUN_RECOVERY_ON_STARTUP`, `RUN_FAIL_RETRY_SECONDS`, `DB_MAX_OVERFLOW`, `DB_POOL_TIMEOUT_SECONDS`, `DB_STATEMENT_TIMEOUT_MS`, `FAKE_LLM_LATENCY_MS` (Milestone 5)
