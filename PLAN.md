@@ -266,7 +266,7 @@ payment-ops-agent/
 - [x] Approving on the page creates an outbox row, the same as the JSON API (tested)
 - [x] A drafted message containing `<script>` renders as text, not HTML (tested)
 - [x] A fresh clone + `cp .env.example .env` + `make demo` (or `docker compose up`) works by following only the README
-- [ ] Mermaid diagrams render on GitHub (syntax reviewed by hand; check on GitHub after push)
+- [x] Mermaid diagrams render on GitHub
 - [x] The README states plainly that the cloud section is a guide and the project is not deployed
 - [x] The interview notes (local) have 15 Q&As, each tied to real code in the repo
 
