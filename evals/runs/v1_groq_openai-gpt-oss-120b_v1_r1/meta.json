@@ -6,7 +6,7 @@
   "llm_provider": "groq",
   "prompt_version": "v1",
   "repeats": 1,
-  "report": null,
+  "report": "evals/reports/2026-11-16T08-10-00_openai-gpt-oss-120b_v1.md",
   "sessions": [
     {
       "git_sha": "810b410e55e6",
@@ -19,6 +19,10 @@
     {
       "git_sha": "461b4b193ed9",
       "started_at": "2026-11-15T09:52:25.572797+00:00"
+    },
+    {
+      "git_sha": "557605333a6a",
+      "started_at": "2026-11-16T08:06:51.272804+00:00"
     }
   ]
 }

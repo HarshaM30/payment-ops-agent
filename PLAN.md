@@ -222,10 +222,10 @@ payment-ops-agent/
 **Done when**
 - [x] The dataset has 40 scenarios that pass schema validation, and the dataset README documents fields
 - [x] `make eval LLM_PROVIDER=fake` runs in CI-like conditions with no API key
-- [ ] The first real eval report on Groq is committed to `evals/reports/`
+- [x] The first real eval report on Groq is committed to `evals/reports/`
 - [x] Metric functions have unit tests with hand-computed expected values, including mean ± std
 - [x] `make eval REPEATS=3 LLM_PROVIDER=fake` produces a report with mean ± std columns; `REPEATS=1` shows plain values
-- [ ] Policy violations reaching the outbox = 0 in the committed report
+- [x] Policy violations reaching the outbox = 0 in the committed report
 
 ---
 
