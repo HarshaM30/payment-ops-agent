@@ -1,11 +1,23 @@
 .DEFAULT_GOAL := help
-.PHONY: help install up db down migrate seed run lint fmt test test-unit test-int cov eval eval-compare bench
+.PHONY: help install demo demo-gif up db down migrate seed run lint fmt test test-unit test-int cov eval eval-compare bench
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-13s %s\n", $$1, $$2}'
 
 install: ## Install runtime + dev dependencies with uv
 	uv sync
+
+DEMO_LATENCY_MS ?= 150
+demo: ## One command: .env secrets, full stack with the fake LLM, seed data, approvals page
+	python3 scripts/demo_env.py
+	LLM_PROVIDER=fake FAKE_LLM_LATENCY_MS=$(DEMO_LATENCY_MS) docker compose up -d --wait --build
+	docker compose exec -T api python -m scripts.seed
+	@echo ""
+	@echo "Ready: open http://localhost:8000/ui/login and sign in with the API_KEY from .env"
+	@echo "(LLM_PROVIDER=fake: no API key needed; stop with 'make down')"
+
+demo-gif: ## Re-record docs/demo.gif from the running demo (needs Google Chrome)
+	uv run --with playwright --with pillow python -m scripts.record_demo
 
 up: ## Start the full stack, Postgres + API on :8000 (builds the image; waits until healthy)
 	docker compose up -d --wait --build

@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends, FastAPI, Request, Response
 from payops import __version__
 from payops.api.deps import PROTECTED_RESPONSES
 from payops.api.errors import error_response, install_error_handlers
-from payops.api.routes import approvals, audit, health, runs
+from payops.api.routes import approvals, audit, health, runs, ui
 from payops.api.security import require_api_key
 from payops.config import get_settings
 from payops.logging import configure_logging, request_id_var
@@ -107,4 +107,8 @@ def create_app() -> FastAPI:
     protected.include_router(approvals.router)
     protected.include_router(audit.router)
     app.include_router(protected)
+
+    # Server-rendered approvals page: session cookie + CSRF instead of the API key header.
+    ui.install_ui(app)
+    app.include_router(ui.router)
     return app

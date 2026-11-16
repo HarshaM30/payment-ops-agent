@@ -8,7 +8,7 @@ import uuid
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from payops.db.models import AgentRun, AuditLog, Invoice
 from payops.db.models.enums import RunStatus
@@ -117,3 +117,15 @@ def get_run(session: Session, run_id: uuid.UUID) -> tuple[AgentRun, list[AuditLo
         latency_ms=sum(t.latency_ms or 0 for t in trace if t.event_type in LEAF_EVENT_TYPES),
     )
     return run, trace, totals
+
+
+def list_recent(session: Session, *, limit: int = 20) -> list[AgentRun]:
+    """Newest runs first, with their actions (for the HTML runs page)."""
+    return list(
+        session.scalars(
+            select(AgentRun)
+            .options(selectinload(AgentRun.actions))
+            .order_by(AgentRun.created_at.desc(), AgentRun.id.desc())
+            .limit(limit)
+        )
+    )

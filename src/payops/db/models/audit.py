@@ -4,9 +4,11 @@ from typing import Any
 
 from sqlalchemy import BigInteger, ForeignKey, Identity, Index, Integer, String, Text, func, text
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from payops.db.base import Base
+from payops.db.models.billing import Invoice
+from payops.db.models.customers import Customer
 
 
 class Outbox(Base):
@@ -23,6 +25,9 @@ class Outbox(Base):
     subject: Mapped[str] = mapped_column(String(200))
     body: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+    invoice: Mapped[Invoice] = relationship()
+    customer: Mapped[Customer] = relationship()
 
 
 class AuditLog(Base):

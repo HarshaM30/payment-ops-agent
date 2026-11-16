@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% set active = "runs" %}
+{% block head %}{% if in_progress %}<meta http-equiv="refresh" content="2">{% endif %}{% endblock %}
+{% block title %}Run {{ run.id|string|truncate(8, True, "") }}{% endblock %}
+{% block content %}
+<h1>Run <code>{{ run.id }}</code></h1>
+<div class="facts card">
+  <div><span class="label">Status</span><span class="status s-{{ run.status.value }}">{{ run.status.value|humanize }}</span>{% if in_progress %} <span class="muted">(refreshing)</span>{% endif %}</div>
+  <div><span class="label">Model</span>{{ run.llm_provider or "–" }}{% if run.llm_model %} / {{ run.llm_model }}{% endif %}<br><span class="muted">prompts {{ run.prompt_version or "–" }}</span></div>
+  <div><span class="label">Steps</span>{{ totals.steps }}<br><span class="muted">{{ totals.latency_ms }} ms in LLM + tool calls</span></div>
+  <div><span class="label">Tokens</span>{{ totals.total_tokens }}<br><span class="muted">{{ totals.prompt_tokens }} in / {{ totals.completion_tokens }} out</span></div>
+</div>
+{% if run.error %}<p class="error">{{ run.error }}</p>{% endif %}
+{% if run.status.value == "awaiting_approval" %}<p class="notice">This run is waiting for a human. <a href="/ui/approvals">Review its approvals →</a></p>{% endif %}
+
+{% if actions %}
+<h2>Actions</h2>
+<table>
+  <thead><tr><th>Invoice</th><th>Action</th><th>Status</th><th>Subject</th></tr></thead>
+  <tbody>
+  {% for a in actions %}
+    <tr>
+      <td>{{ a.invoice.invoice_number }}</td>
+      <td><span class="pill">{{ a.action_type.value|humanize }}</span></td>
+      <td>{{ a.status.value }}{% if a.approval and a.approval.status.value == "pending" %} <span class="muted">(needs approval)</span>{% endif %}</td>
+      <td>{{ a.subject or "" }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+<h2>Trace <span class="muted small">from audit_log, in order</span></h2>
+<table class="trace">
+  <thead><tr><th>#</th><th>Event</th><th>Name</th><th class="num">Latency</th><th class="num">Tokens</th><th>Details</th></tr></thead>
+  <tbody>
+  {% for t in trace %}
+    <tr{% if t.error %} class="has-error"{% endif %}>
+      <td class="muted">{{ loop.index }}</td>
+      <td><span class="ev ev-{{ t.event_type }}">{{ t.event_type|humanize }}</span></td>
+      <td><code>{{ t.name }}</code></td>
+      <td class="num">{% if t.latency_ms is not none %}{{ t.latency_ms }} ms{% endif %}</td>
+      <td class="num">{{ t.total_tokens or "" }}</td>
+      <td>
+        {% if t.error %}<span class="error-text">{{ t.error }}</span>{% endif %}
+        <details><summary>inputs / outputs</summary>
+          <pre>{{ t.inputs|pretty_json }}</pre>
+          <pre>{{ t.outputs|pretty_json }}</pre>
+        </details>
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

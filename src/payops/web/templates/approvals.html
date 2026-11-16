@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% set active = "approvals" %}
+{% block title %}Approvals{% endblock %}
+{% block content %}
+<h1>Pending approvals <span class="count">{{ approvals|length }}{% if next_cursor %}+{% endif %}</span></h1>
+<p class="muted">Approving sends the drafted message exactly as shown (an outbox row), after the
+policy is re-checked against the invoice's current state. No LLM is called after your decision.</p>
+
+{% if not approvals %}
+<p class="empty">Nothing waiting for approval. Start a run from the <a href="/ui/runs">Runs</a> page.</p>
+{% endif %}
+
+{% for ap in approvals %}
+{% set action = ap.action %}{% set inv = action.invoice %}{% set cust = inv.customer %}
+<article class="card approval" id="approval-{{ ap.id }}">
+  <div class="facts">
+    <div><span class="label">Customer</span>{{ cust.name }}<br><span class="muted">{{ cust.company }} · {{ cust.email }}</span></div>
+    <div><span class="label">Invoice</span>{{ inv.invoice_number }}<br><span class="muted">{{ inv.status.value }} · due {{ inv.due_date }}</span></div>
+    <div><span class="label">Balance</span>{{ inv.balance|money(inv.currency) }}<br><span class="muted">of {{ inv.amount|money(inv.currency) }}</span></div>
+    <div><span class="label">Proposed action</span><span class="pill">{{ action.action_type.value|humanize }}</span>{% if action.tone %} <span class="muted">{{ action.tone.value }} tone</span>{% endif %}</div>
+  </div>
+  <div class="rules">
+    <span class="label">Why it needs approval</span>
+    {% for rule in ap.reasons %}<code class="rule">{{ rule }}</code>{% endfor %}
+    {% if "APPROVAL_OVER_THRESHOLD" in ap.reasons %}<span class="muted">balance over {{ threshold|money }}</span>{% endif %}
+  </div>
+  {% if action.subject or action.body %}
+  <div class="message">
+    <div class="subject">{{ action.subject }}</div>
+    <div class="body">{{ action.body }}</div>
+  </div>
+  {% else %}
+  <p class="muted">No message: approving only records the action.</p>
+  {% endif %}
+  <div class="decide">
+    <form method="post" action="/ui/approvals/{{ ap.id }}/approve">
+      <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
+      <button type="submit" class="approve">Approve and send</button>
+    </form>
+    <form method="post" action="/ui/approvals/{{ ap.id }}/reject" class="reject-form">
+      <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
+      <input type="text" name="reason" placeholder="Reason for rejecting" required minlength="3" maxlength="1000" aria-label="Reason for rejecting">
+      <button type="submit" class="reject">Reject</button>
+    </form>
+  </div>
+  <p class="meta muted">Run <a href="/ui/runs/{{ action.run_id }}">{{ action.run_id|string|truncate(8, True, "") }}</a> · requested {{ ap.created_at|when }}</p>
+</article>
+{% endfor %}
+
+{% if next_cursor %}<p><a href="/ui/approvals?cursor={{ next_cursor|urlencode }}">Next page →</a></p>{% endif %}
+{% if paged %}<p><a href="/ui/approvals">← Back to the first page</a></p>{% endif %}
+{% endblock %}

@@ -30,7 +30,7 @@ payment-ops-agent/
 │   │   ├── errors.py           # uniform error response shape
 │   │   └── routes/             # health.py, runs.py, approvals.py, audit.py, ui.py
 │   ├── web/                    # server-rendered approvals page (Milestone 6)
-│   │   ├── templates/          # Jinja2: base.html, login.html, approvals.html
+│   │   ├── templates/          # Jinja2: base, login, approvals, runs, run, outbox, error
 │   │   └── static/             # one small CSS file, no JS framework
 │   ├── services/               # business logic, called by API and agents
 │   │   ├── runs.py
@@ -59,7 +59,9 @@ payment-ops-agent/
 │       └── prompts/            # versioned prompt templates (triage_v1.md, ...)
 ├── migrations/                 # Alembic env + versions/
 ├── scripts/
-│   └── seed.py                 # Faker seed with named scenario types
+│   ├── seed.py                 # Faker seed with named scenario types
+│   ├── demo_env.py             # `make demo`: fill placeholder secrets in .env
+│   └── record_demo.py          # `make demo-gif`: scripted screenshots -> docs/demo.gif
 ├── evals/
 │   ├── datasets/v1/scenarios.jsonl   # 40 scenarios + expected outcomes
 │   ├── datasets/v1/README.md         # schema and changelog for the dataset
@@ -259,14 +261,14 @@ payment-ops-agent/
 4. Interview notes (kept local, not committed): architecture walkthrough, design decisions and tradeoffs, and 15 interview Q&As (e.g. why deterministic guardrails, how retries work, how evals are scored, what fails, what would change at scale).
 
 **Done when**
-- [ ] `/ui/approvals` redirects to `/ui/login` with no session cookie (tested)
-- [ ] A form POST without a valid CSRF token returns 403 (tested)
-- [ ] Approving on the page creates an outbox row, the same as the JSON API (tested)
-- [ ] A drafted message containing `<script>` renders as text, not HTML (tested)
-- [ ] A fresh clone + `cp .env.example .env` + `make demo` (or `docker compose up`) works by following only the README
-- [ ] Mermaid diagrams render on GitHub
-- [ ] The README states plainly that the cloud section is a guide and the project is not deployed
-- [ ] The interview notes have 15 Q&As, each tied to real code in the repo
+- [x] `/ui/approvals` redirects to `/ui/login` with no session cookie (tested)
+- [x] A form POST without a valid CSRF token returns 403 (tested)
+- [x] Approving on the page creates an outbox row, the same as the JSON API (tested)
+- [x] A drafted message containing `<script>` renders as text, not HTML (tested)
+- [x] A fresh clone + `cp .env.example .env` + `make demo` (or `docker compose up`) works by following only the README
+- [ ] Mermaid diagrams render on GitHub (syntax reviewed by hand; check on GitHub after push)
+- [x] The README states plainly that the cloud section is a guide and the project is not deployed
+- [x] The interview notes (local) have 15 Q&As, each tied to real code in the repo
 
 ---
 
@@ -280,7 +282,7 @@ Agreed on 2026-11-15. These override anything in the original spec they conflict
 2. **`POST /runs` is asynchronous.** It returns `202 Accepted` with a run ID; clients poll `GET /runs/{id}`.
 3. **Approvals don't restart the agents.** A run that needs approval ends as `awaiting_approval`. Approving sends the already-drafted message exactly as written, with no further LLM call.
 4. **`payment_plans` table.** Added to the data model. `payment_history` is a per-customer event log (payment received, promise to pay, plan created, dispute opened), separate from `payments`.
-5. **Sync SQLAlchemy + psycopg 3**, not async. The tradeoff is written up in the interview notes.
+5. **Sync SQLAlchemy + psycopg 3**, not async. Requests do a few queries each and the long LLM waits happen in background threads, so sync code is simpler to read, test, and lock correctly; the cost is concurrency bounded by the threadpool and connection pool.
 6. **Discount detection is rule-based** (regex + keyword list), keeping the policy node fully deterministic. Its limits are documented, and some eval scenarios try to get around it.
 7. **Prompt versioning.** Prompts live in versioned files; the version is stored on each run and printed in each eval report.
 
@@ -303,9 +305,16 @@ Agreed on 2026-11-15. These override anything in the original spec they conflict
 16. **Dedicated eval database** (`EVAL_DATABASE_URL`, default `<db>_eval`), wiped before each scenario and guarded by a Postgres advisory lock so two runners can't share it.
 17. **Runs stay in-process** (BackgroundTasks) with one API process per database: startup marks orphaned runs `failed`, and a crash while the DB is down keeps retrying to record the failure. A job queue is the next step at scale.
 
+**Added during Milestone 6**
+
+18. **`make demo`** is the one-command path: it replaces placeholder `API_KEY` / `SESSION_SECRET` values in `.env` with random ones (never printed; values already set are kept), starts the stack with `LLM_PROVIDER=fake`, and seeds.
+19. **Approvals page scope.** Besides approvals and outbox, the page has `/ui/runs` (start a run) and `/ui/runs/{id}` (live trace), so the whole demo happens in the browser. Login asks for the approver's name, which is recorded on decisions. The session cookie stores a keyed fingerprint of `API_KEY`, so rotating the key signs everyone out.
+20. **Demo GIF is generated**, not hand-recorded: `make demo-gif` drives headless Chrome with Playwright and stitches screenshots with Pillow (both fetched with `uv run --with`, not project dependencies).
+
 **Environment variables added**
 
 - `API_KEY`, `SESSION_SECRET`, `EVAL_REPEATS` (all in `.env.example` with placeholder values)
 - `PROMPT_VERSION`, `RESEARCH_MAX_STEPS` (Milestone 3)
 - `EVAL_DATABASE_URL` (Milestone 4)
 - `REQUEST_TIMEOUT_SECONDS`, `RUN_RECOVERY_ON_STARTUP`, `RUN_FAIL_RETRY_SECONDS`, `DB_MAX_OVERFLOW`, `DB_POOL_TIMEOUT_SECONDS`, `DB_STATEMENT_TIMEOUT_MS`, `FAKE_LLM_LATENCY_MS` (Milestone 5)
+- `SESSION_COOKIE_SECURE` (Milestone 6)

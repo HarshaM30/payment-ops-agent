@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% set active = "outbox" %}
+{% block title %}Outbox{% endblock %}
+{% block content %}
+<h1>Outbox <span class="count">{{ messages|length }}</span></h1>
+<p class="muted">Simulated sent messages, newest first. Nothing is really emailed: "sending" means a row in the <code>outbox</code> table.</p>
+{% if not messages %}<p class="empty">Nothing sent yet.</p>{% endif %}
+{% for m in messages %}
+<article class="card">
+  <div class="facts">
+    <div><span class="label">To</span>{{ m.recipient }}<br><span class="muted">{{ m.customer.name }} · {{ m.customer.company }}</span></div>
+    <div><span class="label">Invoice</span>{{ m.invoice.invoice_number }}<br><span class="muted">balance {{ m.invoice.balance|money(m.invoice.currency) }}</span></div>
+    <div><span class="label">Sent</span>{{ m.created_at|when }}<br><span class="muted">via {{ m.channel }}</span></div>
+  </div>
+  <div class="message">
+    <div class="subject">{{ m.subject }}</div>
+    <div class="body">{{ m.body }}</div>
+  </div>
+</article>
+{% endfor %}
+{% endblock %}

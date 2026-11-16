@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% set active = "runs" %}
+{% block title %}Runs{% endblock %}
+{% block content %}
+<h1>Agent runs</h1>
+<section class="card">
+  <form method="post" action="/ui/runs" class="inline">
+    <input type="hidden" name="csrf_token" value="{{ session.csrf_token }}">
+    <label>Max invoices
+      <input type="number" name="max_invoices" value="5" min="1" max="{{ max_invoices_limit }}" required>
+    </label>
+    <button type="submit">Start run over overdue invoices</button>
+  </form>
+  <p class="muted">Same as <code>POST /runs {"scope": "all_overdue"}</code>: the highest-priority overdue invoices are triaged, researched, drafted, and checked by the policy engine.</p>
+</section>
+
+{% if runs %}
+<table>
+  <thead><tr><th>Run</th><th>Status</th><th>Model</th><th>Actions</th><th>Created</th></tr></thead>
+  <tbody>
+  {% for run in runs %}
+    <tr>
+      <td><a href="/ui/runs/{{ run.id }}"><code>{{ run.id|string|truncate(8, True, "") }}</code></a></td>
+      <td><span class="status s-{{ run.status.value }}">{{ run.status.value|humanize }}</span></td>
+      <td>{{ run.llm_provider or "" }}{% if run.llm_model %} / {{ run.llm_model }}{% endif %}</td>
+      <td>{{ run.actions|length }}</td>
+      <td>{{ run.created_at|when }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="empty">No runs yet.</p>
+{% endif %}
+{% endblock %}

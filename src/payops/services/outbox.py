@@ -1,6 +1,7 @@
 """Executes approved actions. "Sending" a message means inserting an outbox row."""
 
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.orm import Session, joinedload
 
 from payops import clock
 from payops.db.models import Action, Outbox
@@ -46,3 +47,15 @@ def execute_action(session: Session, action: Action) -> Outbox | None:
     action.executed_at = clock.now()
     session.flush()
     return row
+
+
+def list_recent(session: Session, *, limit: int = 100) -> list[Outbox]:
+    """Newest simulated sends first, with the invoice and customer loaded."""
+    return list(
+        session.scalars(
+            select(Outbox)
+            .options(joinedload(Outbox.invoice), joinedload(Outbox.customer))
+            .order_by(Outbox.created_at.desc(), Outbox.id.desc())
+            .limit(limit)
+        )
+    )

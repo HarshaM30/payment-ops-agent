@@ -35,6 +35,8 @@ class Settings(BaseSettings):
     # API security
     api_key: SecretStr | None = None
     session_secret: SecretStr | None = None
+    # Mark the approvals-page session cookie Secure (HTTPS only). Leave off for http://localhost.
+    session_cookie_secure: bool = False
 
     # Database
     database_url: str = Field(min_length=1)

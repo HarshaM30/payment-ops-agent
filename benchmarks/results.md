@@ -81,32 +81,36 @@ Killing Postgres (`docker compose kill db`) in the middle of a run, with
 
 ## Agent quality (eval)
 
-Full reports go in [`evals/reports/`](../evals/reports/) once a run completes.
+Full report:
+[`evals/reports/2026-11-16T08-10-00_openai-gpt-oss-120b_v1.md`](../evals/reports/2026-11-16T08-10-00_openai-gpt-oss-120b_v1.md),
+raw results in
+[`evals/runs/v1_groq_openai-gpt-oss-120b_v1_r1/results.jsonl`](../evals/runs/v1_groq_openai-gpt-oss-120b_v1_r1/results.jsonl).
+Groq `openai/gpt-oss-120b`, prompt v1, dataset v1 (40 scenarios), 1 repeat. The run took
+four runner sessions over two days because a full run needs more than the free tier's
+200K tokens/day; the runner resumed where it stopped each time.
 
-**Status (2026-11-15): Groq run 35 of 40 scenarios done, so no report yet.** The free
-tier's 200K tokens/day ran out on the 36th scenario. The runner stopped without saving it,
-and `make eval` finishes the remaining 5 once the quota resets. Interim numbers from
-[`evals/runs/v1_groq_openai-gpt-oss-120b_v1_r1/results.jsonl`](../evals/runs/v1_groq_openai-gpt-oss-120b_v1_r1/results.jsonl)
-(`openai/gpt-oss-120b`, prompt v1, dataset v1, 1 repeat). Not final:
-
-| Metric | Groq, 35/40 (interim) | Fake LLM, 40/40 |
+| Metric | Groq, 40/40 | Fake LLM, 40/40 |
 | --- | ---: | ---: |
-| Decision accuracy | 88.6% | 100% |
-| Task success rate | 88.6% | 100% |
-| Acceptable-action rate | 97.1% | 100% |
-| Approval-flag accuracy | 91.4% | 100% |
+| Decision accuracy | 87.5% | 100% |
+| Task success rate | 87.5% | 100% |
+| Acceptable-action rate | 97.5% | 100% |
+| Approval-flag accuracy | 92.5% | 100% |
 | Tool-call precision / recall | 100% / 100% | 100% / 100% |
 | Schema-valid rate | 100% | 100% |
 | Policy violations reaching the outbox | **0** | 0 |
 | Policy violations caught by the guardrail | 0 | 0 |
-| Latency p95 per run | 58.7 s | 36 ms |
-| Average tokens per run | 6,000 | 3,592 |
+| Latency p50 / p95 per run | 48.5 s / 58.6 s | – / 36 ms |
+| Average tokens per run | 5,984 | 3,592 |
 
 The fake LLM's 100% is a check of the fixtures, not of the agent: its decision rule is
-the one the dataset encodes. Groq latency is mostly the client-side throttle
-(`LLM_TOKENS_PER_MINUTE=7000`, under Groq's 8K TPM), not model time.
+the one the dataset encodes.
 
-Interim failures: three times the model sent a reminder where a payment-plan offer was
+**Groq latency includes free-tier rate-limit throttling.** It is mostly the client-side
+throttle (`LLM_TOKENS_PER_MINUTE=7000`, under Groq's 8K TPM) waiting before each call,
+plus any backoff after a 429, not model time.
+
+Failures (5 of 40): three times the model sent a reminder where a payment-plan offer was
 expected (chl-04, prt-02, prt-05, all customers with partial payments or a long history
-of lateness), and once it escalated a customer on an active payment plan whose history
-mentions a waiver request (rpp-04) instead of taking no action.
+of lateness), once it sent a reminder for an invoice that is not yet due (cur-04), and
+once it escalated a customer on an active payment plan whose history mentions a waiver
+request (rpp-04) instead of taking no action.
